@@ -36,12 +36,20 @@ function calculateProductCapacities(inventoryList) {
   function buildPartInfo(name, req, pool, poss, isBtl) {
     let action = "🟢 庫存充足";
     let statusClass = "text-green";
-    if (isBtl) {
-      action = `🔴 短板瓶頸！最晚下單：${deadlineStr}`;
-      statusClass = "text-red";
+    if (poss <= 20) {
+      if (isBtl) {
+        action = `🔴 短板缺料！最晚下單：${deadlineStr}`;
+        statusClass = "text-red";
+      } else {
+        action = "🟡 庫存偏低 (接近保底)";
+        statusClass = "text-yellow";
+      }
     } else if (poss <= 50) {
-      action = `🟡 庫存水位偏低，建議追蹤叫貨`;
+      action = "🟡 水位注意 (可規劃叫貨)";
       statusClass = "text-yellow";
+    } else {
+      action = "🟢 庫存充足";
+      statusClass = "text-green";
     }
     return {
       name: name,

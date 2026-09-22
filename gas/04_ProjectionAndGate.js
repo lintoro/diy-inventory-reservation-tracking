@@ -160,9 +160,10 @@ function checkBookingEligibility(eventDate, productId, bookingQty) {
  * @param {string} groupName 預約團體或窗口
  * @param {string} phone 聯絡電話
  * @param {string} note 備註
+ * @param {string} [customBookingNo] 自訂預約單號 (選填)
  * @returns {Object} 登記結果
  */
-function submitBookingRecord(eventDate, productId, bookingQty, groupName, phone, note) {
+function submitBookingRecord(eventDate, productId, bookingQty, groupName, phone, note, customBookingNo) {
   // 先執行時間閘門防呆試算
   const check = checkBookingEligibility(eventDate, productId, bookingQty);
   if (!check.canBook) {
@@ -179,9 +180,12 @@ function submitBookingRecord(eventDate, productId, bookingQty, groupName, phone,
   const nowStr = Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
   const dateCompact = Utilities.formatDate(now, "Asia/Taipei", "yyyyMMdd");
   
-  // 生成預約單號 BK-YYYYMMDD-XXX
-  const bkCount = bkSheet.getLastRow();
-  const bookingNo = `BK-${dateCompact}-${String(bkCount).padStart(3, "0")}`;
+  // 決定預約單號 (若有傳入自訂單號則優先採用)
+  let bookingNo = String(customBookingNo || "").trim();
+  if (!bookingNo) {
+    const bkCount = bkSheet.getLastRow();
+    bookingNo = `BK-${dateCompact}-${String(bkCount).padStart(3, "0")}`;
+  }
 
   const procurementStatus = check.procurementNeeded ? "待採購叫貨" : "無須採購";
 
@@ -251,8 +255,8 @@ function generate45DaysProjection() {
     const dateStr = Utilities.formatDate(targetDate, "Asia/Taipei", "yyyy/MM/dd");
     const dayOfWeek = weekDayNames[targetDate.getDay()];
     const isWk = isHolidayOrWeekend(targetDate);
-    const typeStr = isWk ? "假日 (保底35)" : "平日 (保底10)";
-    const safety = isWk ? CONFIG.SAFETY_FLOOR.WEEKEND : CONFIG.SAFETY_FLOOR.WEEKDAY;
+    const safety = getSafetyFloor(targetDate);
+    const typeStr = isWk ? `假日 (保底${safety})` : `平日 (保底${safety})`;
 
     // 計算各商品扣除散客保底後的可用量
     const p1Avail = Math.max(0, capacities["1"].maxCapacity - safety);

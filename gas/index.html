@@ -75,10 +75,7 @@
       font-weight: 600;
       transition: all 0.2s;
     }
-    .btn-logout:hover {
-      background: #ef4444;
-      color: white;
-    }
+    .btn-logout:hover { background: #ef4444; color: white; }
 
     /* 導覽頁籤 */
     .tabs {
@@ -568,6 +565,10 @@
             <div class="card">
               <div class="card-title">🔍 預約速查與可接上限試算</div>
               <div class="form-group">
+                <label class="form-label">預約單號 <span style="font-size:12px; color:#64748b;">(自動帶出或自訂)</span></label>
+                <input type="text" id="bk-no" class="form-input" placeholder="例如：BK-20260923-001">
+              </div>
+              <div class="form-group">
                 <label class="form-label">預計活動日期</label>
                 <input type="date" id="bk-date" class="form-input" onchange="runLiveEligibilityCheck()">
               </div>
@@ -739,14 +740,78 @@
               <thead>
                 <tr>
                   <th>商品名稱</th>
-                  <th>該日型態</th>
-                  <th>現場散客預留</th>
-                  <th>該日預估淨可用量</th>
-                  <th>狀態</th>
+                  <th>當前在庫總套數</th>
+                  <th>現場散客保留</th>
+                  <th>已預約套數</th>
+                  <th>當日預估淨可用量</th>
+                  <th>狀態燈號</th>
                 </tr>
               </thead>
               <tbody id="proj-date-tbody">
-                <tr><td colspan="5" style="text-align:center; color:#94a3b8;">請選擇上方日期速查</td></tr>
+                <tr><td colspan="6" style="text-align:center; color:#94a3b8;">請選擇上方日期速查</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 採購下單登錄與到貨核銷 (INPUT 表單 ＋ 清冊) -->
+        <div class="card">
+          <div class="card-title">
+            <span class="card-title-text">🛒 在途採購管理與新單登錄</span>
+            <span style="font-size: 12px; color: var(--text-muted);">庫管採購 ｜ 到貨一鍵核銷</span>
+          </div>
+
+          <!-- 採購下單登錄 INPUT 表單 -->
+          <div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 16px;">
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--primary);">
+              ➕ 新增採購下單 (INPUT)
+            </div>
+            <div class="grid grid-3" style="gap: 12px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">採購材料品號/品名</label>
+                <select id="po-item-code" class="form-select"></select>
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">採購數量</label>
+                <input type="number" id="po-qty" class="form-input" min="1" placeholder="例如：100">
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">預計到貨日</label>
+                <input type="date" id="po-arrival-date" class="form-input">
+              </div>
+            </div>
+            <div class="grid grid-2" style="gap: 12px; margin-top: 10px; align-items: flex-end;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">採購備註 / 供應商</label>
+                <input type="text" id="po-note" class="form-input" placeholder="例如：補折疊籃短栓安全庫存">
+              </div>
+              <div>
+                <button class="btn btn-primary btn-block" onclick="submitProcurementOrder()">
+                  確認登錄採購單 ➔
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 在途採購清冊表格 (含核銷動作) -->
+          <div style="font-weight: 700; font-size: 14px; margin-bottom: 8px; color: #334155;">
+            📋 在途採購與待到貨清冊
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>採購單號</th>
+                  <th>下單日</th>
+                  <th>品名規格</th>
+                  <th>採購量</th>
+                  <th>預計到貨</th>
+                  <th>狀態</th>
+                  <th>核銷操作</th>
+                </tr>
+              </thead>
+              <tbody id="pending-pos-tbody">
+                <tr><td colspan="7" style="text-align:center; color:#94a3b8;">目前無在途採購項目</td></tr>
               </tbody>
             </table>
           </div>
@@ -784,13 +849,13 @@
           </details>
         </div>
 
-        <div class="grid grid-2">
-          <!-- 現場 3 秒抽盤 -->
-          <div class="card">
-            <div class="card-title">⏱️ 門市現場 3 秒抽盤回報 (實數優先)</div>
-            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
-              抽盤實數將即時覆蓋 ERP 640 倉帳面數，校準短板池並自動滾動推移。
-            </p>
+        <!-- 現場 3 秒抽盤卡片 -->
+        <div class="card">
+          <div class="card-title">⏱️ 門市現場 3 秒抽盤回報 (實數優先)</div>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            抽盤實數將即時覆蓋 ERP 640 倉帳面數，校準短板池並自動滾動推移。
+          </p>
+          <div class="grid grid-2">
             <div class="form-group">
               <label class="form-label">抽盤物料品號</label>
               <select id="cc-item-code" class="form-select"></select>
@@ -799,6 +864,8 @@
               <label class="form-label">現場實盤數量</label>
               <input type="number" id="cc-qty" class="form-input" min="0" placeholder="輸入現場清點實數">
             </div>
+          </div>
+          <div class="grid grid-2">
             <div class="form-group">
               <label class="form-label">盤點人員</label>
               <input type="text" id="cc-staff" class="form-input" placeholder="例如：門市店員">
@@ -807,31 +874,10 @@
               <label class="form-label">抽盤備註</label>
               <input type="text" id="cc-note" class="form-input" placeholder="例如：破損除役、花色補正">
             </div>
-            <button class="btn btn-success btn-block" onclick="submitCycleCount()">
-              登記抽盤實數 ➔
-            </button>
           </div>
-
-          <!-- 在途採購清冊 -->
-          <div class="card">
-            <div class="card-title">📦 在途採購與補貨待辦清冊</div>
-            <div class="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>採購單號</th>
-                    <th>品名規格</th>
-                    <th>需補數量</th>
-                    <th>最晚下單日</th>
-                    <th>狀態</th>
-                  </tr>
-                </thead>
-                <tbody id="pending-pos-tbody">
-                  <tr><td colspan="5" style="text-align:center; color:#94a3b8;">無待採購項目</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <button class="btn btn-success btn-block" onclick="submitCycleCount()">
+            登記抽盤實數 ➔
+          </button>
         </div>
 
       </div>
@@ -983,8 +1029,33 @@
         switchTab("tab-manager");
       }
 
+      // 生成建議預約單號帶出
+      initDefaultBookingNo();
+      // 初始化到貨日預設為 15 天後
+      initDefaultArrivalDate();
       loadDashboard();
       initProjectionDateSelect();
+    }
+
+    function initDefaultBookingNo() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const r = String(Math.floor(Math.random() * 900) + 100);
+      const input = document.getElementById("bk-no");
+      if (input && !input.value) {
+        input.value = `BK-${y}${m}${d}-${r}`;
+      }
+    }
+
+    function initDefaultArrivalDate() {
+      const now = new Date();
+      now.setDate(now.getDate() + 15);
+      const arrInput = document.getElementById("po-arrival-date");
+      if (arrInput && !arrInput.value) {
+        arrInput.value = now.toISOString().substring(0, 10);
+      }
     }
 
     function handleChangePasswordSubmit() {
@@ -1054,7 +1125,7 @@
           }
           cachedDashboardData = res;
 
-          // 1. 安全提取陣列 (解決 .map TypeError)
+          // 1. 安全提取陣列
           let capsArray = [];
           if (Array.isArray(res.capacitiesList)) {
             capsArray = res.capacitiesList;
@@ -1066,13 +1137,13 @@
           renderCapacitiesDrawers("prod-capacities-list-booking", capsArray, res.safetyFloorConfig);
           renderCapacitiesDrawers("prod-capacities-list-manager", capsArray, res.safetyFloorConfig);
 
-          // 3. 渲染物料下拉選單
+          // 3. 渲染物料下拉選單 (抽盤 ＋ 採購)
           renderMaterialSelect(res.materials);
 
           // 4. 渲染未來 30 天預約清單
           renderRecentBookings(res.recentBookings);
 
-          // 5. 渲染在途採購
+          // 5. 渲染在途採購清單
           renderPendingPOs(res.pendingPOs);
 
           // 6. 更新保底輸入框預設值
@@ -1081,7 +1152,7 @@
             document.getElementById("sf-weekend").value = res.safetyFloorConfig.weekend || 20;
           }
 
-          // 7. 觸發試算
+          // 7. 觸發即時試算
           runLiveEligibilityCheck();
         })
         .withFailureHandler(function(err) {
@@ -1109,7 +1180,6 @@
         const netWe = Math.max(0, total - weFloor);
         const drawerId = `${containerId}-drawer-${p.productId}`;
 
-        // 建立專屬原物料用料清單
         const parts = p.partsDetail || [];
         const partsRows = parts.map(pt => `
           <tr class="${pt.isBottleneck ? 'highlight-row' : ''}">
@@ -1170,7 +1240,6 @@
       }).join("");
     }
 
-    // 切換抽屜展開/摺疊
     function toggleDrawer(drawerId) {
       const el = document.getElementById(drawerId);
       if (el) {
@@ -1197,29 +1266,99 @@
       `).join("");
     }
 
+    // 渲染在途採購清單 (含到貨核銷按鈕)
     function renderPendingPOs(list) {
       const tbody = document.getElementById("pending-pos-tbody");
       if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:20px 10px;">無待採購項目</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:20px 10px;">目前無在途採購項目</td></tr>';
         return;
       }
-      tbody.innerHTML = list.map(p => `
-        <tr>
-          <td><strong>${p.poNumber}</strong></td>
-          <td>${p.itemName}</td>
-          <td style="color:#b91c1c; font-weight:700;">+${p.qty}</td>
-          <td>${p.deadline}</td>
-          <td><span style="color:#f59e0b; font-weight:600;">${p.status}</span></td>
-        </tr>
-      `).join("");
+      tbody.innerHTML = list.map(p => {
+        const isReceived = (p.status === "已到貨入庫");
+        const actionBtn = isReceived ? '<span style="color:#10b981; font-weight:600;">已入庫</span>' : `
+          <button class="btn btn-success btn-sm" onclick="markPOReceived('${p.poNumber}')">
+            ✅ 標記已到貨
+          </button>
+        `;
+
+        return `
+          <tr>
+            <td><strong>${p.poNumber}</strong></td>
+            <td>${p.orderDate}</td>
+            <td>${p.itemName}</td>
+            <td style="color:#b91c1c; font-weight:700;">+${p.qty}</td>
+            <td>${p.deadline}</td>
+            <td><span style="color:${isReceived ? '#10b981' : '#f59e0b'}; font-weight:600;">${p.status}</span></td>
+            <td>${actionBtn}</td>
+          </tr>
+        `;
+      }).join("");
     }
 
     function renderMaterialSelect(materials) {
-      const select = document.getElementById("cc-item-code");
-      if (!materials || select.options.length > 0) return;
-      select.innerHTML = materials.map(m => `
+      const ccSelect = document.getElementById("cc-item-code");
+      const poSelect = document.getElementById("po-item-code");
+      if (!materials || ccSelect.options.length > 0) return;
+      
+      const opts = materials.map(m => `
         <option value="${m.itemCode}">${m.itemName} (${m.itemCode})</option>
       `).join("");
+
+      ccSelect.innerHTML = opts;
+      if (poSelect) poSelect.innerHTML = opts;
+    }
+
+    // 提交採購下單 (INPUT 表單)
+    function submitProcurementOrder() {
+      const itemCode = document.getElementById("po-item-code").value;
+      const qty = Number(document.getElementById("po-qty").value);
+      const arrivalDate = document.getElementById("po-arrival-date").value;
+      const note = document.getElementById("po-note").value;
+
+      if (!itemCode || isNaN(qty) || qty <= 0) {
+        alert("請選擇採購材料並輸入有效的採購數量！");
+        return;
+      }
+
+      showLoading(true, "建立在途採購單中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            document.getElementById("po-qty").value = "";
+            document.getElementById("po-note").value = "";
+            loadDashboard();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("建立採購單失敗: " + err);
+        })
+        .api_createProcurementOrder({
+          itemCode: itemCode,
+          qty: qty,
+          arrivalDate: arrivalDate,
+          note: note
+        });
+    }
+
+    // 標記採購到貨核銷
+    function markPOReceived(poNumber) {
+      if (!confirm(`確定採購單 [${poNumber}] 貨品已全數點收入庫嗎？`)) return;
+
+      showLoading(true, "核銷採購到貨中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("核銷失敗: " + err);
+        })
+        .api_markProcurementReceived(poNumber);
     }
 
     // 庫管儲存現場散客保底
@@ -1238,6 +1377,7 @@
           showLoading(false);
           alert(res.message);
           loadDashboard();
+          handleProjectionDateChange();
         })
         .withFailureHandler(function(err) {
           showLoading(false);
@@ -1284,7 +1424,7 @@
             return;
           }
           document.getElementById("proj-date-meta").innerHTML = `
-            📅 <b>${res.date}</b> (${res.dateType}) ｜ 現場散客保底：<strong style="color:var(--primary);">${res.safetyFloor} 份</strong>
+            📅 <b>${res.date}</b> (${res.dateType}) ｜ 現場散客保底預留：<strong style="color:var(--primary);">${res.safetyFloor} 份</strong>
           `;
 
           const tbody = document.getElementById("proj-date-tbody");
@@ -1295,13 +1435,17 @@
             return `
               <tr>
                 <td><strong>${item.name}</strong></td>
-                <td>${res.dateType}</td>
-                <td>${res.safetyFloor} 份</td>
-                <td style="font-size:15px; font-weight:700; color:${isZero ? '#ef4444' : 'var(--primary)'};">${item.netQty} 套</td>
-                <td>${isZero ? '<span class="status-badge RED">需補貨</span>' : '<span class="status-badge GREEN">充足</span>'}</td>
+                <td style="text-align:center;">${item.grossCapacity} 套</td>
+                <td style="text-align:center;">${item.safetyFloor} 份</td>
+                <td style="text-align:center;">${item.bookedQty} 套</td>
+                <td style="text-align:center; font-size:15px; font-weight:700; color:${isZero ? '#ef4444' : 'var(--primary)'};">${item.netQty} 套</td>
+                <td>${isZero ? '<span class="status-badge RED">缺料/需叫貨</span>' : '<span class="status-badge GREEN">充足可約</span>'}</td>
               </tr>
             `;
           }).join("");
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById("proj-date-meta").innerText = "試算失敗: " + err;
         })
         .api_getProjectionByDate(dateVal);
     }
@@ -1352,9 +1496,10 @@
         .api_checkEligibility(dateVal, prodVal, qtyVal);
     }
 
-    // 業務送單
+    // 業務送單 (支援自訂單號)
     function submitBookingForm() {
       const data = {
+        bookingNo: document.getElementById("bk-no").value.trim(),
         eventDate: document.getElementById("bk-date").value,
         productId: document.getElementById("bk-product").value,
         qty: Number(document.getElementById("bk-qty").value),
@@ -1382,6 +1527,7 @@
           document.getElementById("bk-group").value = "";
           document.getElementById("bk-phone").value = "";
           document.getElementById("bk-note").value = "";
+          initDefaultBookingNo(); // 重新產生下一組單號
           loadDashboard();
         })
         .withFailureHandler(function(err) {

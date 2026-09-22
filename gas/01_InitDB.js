@@ -222,9 +222,42 @@ function initDatabase() {
     }
   }
 
+  // 5. 自動清除測試殘留假資料
+  clearDummyTestData();
+
   return {
     success: true,
     message: "Google Sheets 8 大底表、初始管理者與主檔資料初始化完成！",
     spreadsheetUrl: ss.getUrl()
   };
 }
+
+/**
+ * 清除預約明細與採購清冊中含有「測試」字樣之測試單
+ */
+function clearDummyTestData() {
+  const ss = getSpreadsheet();
+  
+  // 清理預約表
+  const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
+  if (bkSheet && bkSheet.getLastRow() > 1) {
+    const rows = bkSheet.getRange(2, 1, bkSheet.getLastRow() - 1, bkSheet.getLastColumn()).getValues();
+    const cleanRows = rows.filter(r => !String(r[4] || "").includes("測試") && !String(r[8] || "").includes("測試"));
+    bkSheet.getRange(2, 1, bkSheet.getLastRow() - 1, bkSheet.getLastColumn()).clearContent();
+    if (cleanRows.length > 0) {
+      bkSheet.getRange(2, 1, cleanRows.length, cleanRows[0].length).setValues(cleanRows);
+    }
+  }
+
+  // 清理採購表
+  const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
+  if (poSheet && poSheet.getLastRow() > 1) {
+    const rows = poSheet.getRange(2, 1, poSheet.getLastRow() - 1, poSheet.getLastColumn()).getValues();
+    const cleanRows = rows.filter(r => !String(r[7] || "").includes("測試") && !String(r[8] || "").includes("測試"));
+    poSheet.getRange(2, 1, poSheet.getLastRow() - 1, poSheet.getLastColumn()).clearContent();
+    if (cleanRows.length > 0) {
+      poSheet.getRange(2, 1, cleanRows.length, cleanRows[0].length).setValues(cleanRows);
+    }
+  }
+}
+

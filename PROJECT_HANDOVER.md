@@ -6,9 +6,9 @@
 
 ## 一、 系統正式線上入口 (Production Endpoints)
 
-- **Web App 操作介面（工號登入 ＋ 活動抽屜 ＋ 保底調控 ＋ ERP 直傳）**：
+- **Web App 操作介面（工號登入 ＋ 活動抽屜 ＋ 採購核銷 ＋ 保底調控 ＋ ERP 直傳）**：
   👉 [https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec](https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec)
-  - 部署版本：`@7`（支援純工號登入、活動用料專屬抽屜、散客保底 10/20 動態調控、未來 30 天預約篩選、SheetJS 檔案直傳）
+  - 部署版本：`@8`（分頁標籤更名、>50套短板免催單、預約單號INPUT、採購實用登錄與到貨核銷、推移速查記憶體即時試算）
   - 預設初始最高管理者：工號 `B111014`，預設密碼 `000000`
   - 介面：響應式多角色視角（ADMIN 人員管理 + 業務預約端 + 庫存盤點與 ERP 上傳）
 - **Google 試算表（資料庫 SSOT）**：
