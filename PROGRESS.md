@@ -30,3 +30,5 @@
 - [x] 完成 Phase 4：45 天動態推移與 15 天交期時間閘門防呆（`gas/04_ProjectionAndGate.js`），手動驗收通過。
 - [x] 完成 Phase 5：雙視角 Web App 前後端介面開發（`gas/05_API.js`、`gas/index.html`）。
 - [x] 排查並排除多重 doGet 覆蓋問題，成功部署並更新至 Version `@5`，手機與新瀏覽器皆可正常載入。
+- [x] 完成本地 Git 倉庫初始化，確認 `.gitignore` 嚴格隔離敏感與參考資料，成功推送到遠端 GitHub 儲存庫（`lintoro/diy-inventory-reservation-tracking`）。
+- [x] 完成 `PROJECT_HANDOVER.md` 異地接續開發 SOP、踩坑指引與後續待辦事項更新，準備進行異地交接。
