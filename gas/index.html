@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>DIY 活動物料庫存與預約接單管理系統</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #1e3a8a;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --green: #10b981;
+      --green-bg: #ecfdf5;
+      --yellow: #f59e0b;
+      --yellow-bg: #fffbeb;
+      --red: #ef4444;
+      --red-bg: #fef2f2;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Noto Sans TC', sans-serif; }
+    body { background-color: var(--bg); color: var(--text); line-height: 1.5; padding-bottom: 40px; }
+    .header {
+      background: linear-gradient(135deg, #1e3a8a, #0f172a);
+      color: white;
+      padding: 20px 24px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    }
+    .header h1 { font-size: 20px; font-weight: 700; }
+    .header p { font-size: 13px; color: #cbd5e1; margin-top: 4px; }
+    .tabs {
+      display: flex;
+      background: white;
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      gap: 8px;
+    }
+    .tab-btn {
+      padding: 14px 20px;
+      border: none;
+      background: none;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      font-weight: 700;
+    }
+    .container { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+    @media (min-width: 768px) {
+      .grid-2 { grid-template-columns: 1fr 1fr; }
+      .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; color: #334155; }
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      background: white;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(30,58,138,0.1);
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 18px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s;
+      gap: 6px;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+    .btn-outline { background: white; border: 1px solid var(--border); color: #334155; }
+    .btn-outline:hover { background: #f1f5f9; }
+    .btn-block { width: 100%; }
+    
+    /* 燈號警示面板 */
+    .status-panel {
+      border-radius: 10px;
+      padding: 16px;
+      margin-top: 16px;
+      display: none;
+    }
+    .status-panel.GREEN {
+      background: var(--green-bg);
+      border: 1px solid #a7f3d0;
+      color: #065f46;
+    }
+    .status-panel.YELLOW {
+      background: var(--yellow-bg);
+      border: 1px solid #fde68a;
+      color: #92400e;
+    }
+    .status-panel.RED {
+      background: var(--red-bg);
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .status-badge.GREEN { background: var(--green); color: white; }
+    .status-badge.YELLOW { background: var(--yellow); color: white; }
+    .status-badge.RED { background: var(--red); color: white; }
+
+    /* 商品庫存徽章清單 */
+    .prod-badge-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background: #f8fafc;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    .table-container { overflow-x: auto; margin-top: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+    th { background: #f1f5f9; padding: 10px; font-weight: 600; border-bottom: 1px solid var(--border); }
+    td { padding: 10px; border-bottom: 1px solid var(--border); }
+    .loading-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      font-weight: 700;
+      color: var(--primary);
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>🚀 DIY 活動物料庫存與預約接單管理系統</h1>
+    <p>整合 ERP 640 倉、雙軌現場抽盤、BOM 短板總量池與 15 天交期時間閘門防呆</p>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('tab-booking')">📝 業務接單速查與預約</button>
+    <button class="tab-btn" onclick="switchTab('tab-manager')">📊 主管盤點與採購看板</button>
+  </div>
+
+  <div class="container">
+    
+    <!-- TAB 1: 業務接單視角 -->
+    <div id="tab-booking" class="tab-pane active">
+      <div class="grid grid-2">
+        
+        <!-- 接單試算表單 -->
+        <div class="card">
+          <div class="card-title">🔍 預約速查與可接上限試算</div>
+          
+          <div class="form-group">
+            <label class="form-label">活動日期 (Event Date)</label>
+            <input type="date" id="bk-date" class="form-input" onchange="runLiveEligibilityCheck()">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">體驗方案 (DIY Product)</label>
+            <select id="bk-product" class="form-select" onchange="runLiveEligibilityCheck()">
+              <option value="1">1. 手能生巧 (HTB-50 工具)</option>
+              <option value="2">2. 繪聲繪影 - 胖胖盒款</option>
+              <option value="3">3. 繪聲繪影 - TB-200款</option>
+              <option value="4">4. 繪聲繪影 - TB-9款</option>
+              <option value="5" selected>5. 旁敲側擊 (折疊籃 FB-4531)</option>
+              <option value="6">6. 請多紙膠 (潘朵拉盒)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">預約人數 / 套數 (Quantity)</label>
+            <input type="number" id="bk-qty" class="form-input" min="1" value="10" oninput="runLiveEligibilityCheck()">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">團體名稱 / 單位窗口</label>
+            <input type="text" id="bk-group" class="form-input" placeholder="例如：南投國小五年級師生團">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">聯絡電話</label>
+            <input type="text" id="bk-phone" class="form-input" placeholder="例如：0912-345-678">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">備註 (Note)</label>
+            <input type="text" id="bk-note" class="form-input" placeholder="特殊需求或到店時間備註">
+          </div>
+
+          <button id="btn-submit-booking" class="btn btn-primary btn-block" onclick="submitBookingForm()">
+            確認送出預約登記
+          </button>
+        </div>
+
+        <!-- 即時試算與燈號防呆面板 -->
+        <div>
+          <div class="card">
+            <div class="card-title">🚦 接單防呆與可用量即時判定</div>
+            
+            <div id="status-box" class="status-panel" style="display: block;">
+              <span id="status-badge" class="status-badge GREEN">綠燈 (可正常接單)</span>
+              <div id="status-text" style="font-size: 14px; font-weight: 500;">
+                正在試算當前日期可用庫存...
+              </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+              <div style="font-size: 14px; font-weight: 700; margin-bottom: 10px; color: #334155;">
+                📋 運算防呆細部指標：
+              </div>
+              <div class="prod-badge-item">
+                <span>活動日距今天數：</span>
+                <strong id="stat-days-diff">- 天</strong>
+              </div>
+              <div class="prod-badge-item">
+                <span>日期型態與散客保底：</span>
+                <strong id="stat-safety-floor">- 份</strong>
+              </div>
+              <div class="prod-badge-item">
+                <span>當日淨可預約上限：</span>
+                <strong id="stat-max-avail" style="color: var(--primary); font-size: 16px;">- 套</strong>
+              </div>
+              <div class="prod-badge-item">
+                <span>原物料木桶最短板：</span>
+                <strong id="stat-bottleneck" style="color: #b91c1c;">-</strong>
+              </div>
+              <div id="stat-order-deadline-row" class="prod-badge-item" style="display: none; background: #fef3c7;">
+                <span>最晚叫貨下單日：</span>
+                <strong id="stat-order-deadline" style="color: #92400e;">-</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- 最近預約清單 -->
+          <div class="card" style="margin-top: 20px;">
+            <div class="card-title">📑 近期預約登記明細</div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>單號</th>
+                    <th>日期</th>
+                    <th>方案</th>
+                    <th>套數</th>
+                    <th>團體</th>
+                    <th>燈號</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-bookings-tbody">
+                  <tr><td colspan="6" style="text-align:center; color:#94a3b8;">載入中...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- TAB 2: 主管盤點與採購視角 -->
+    <div id="tab-manager" class="tab-pane">
+      <div class="grid grid-2">
+        
+        <!-- 當前 6 大商品即時產能 -->
+        <div class="card">
+          <div class="card-title">📦 六大體驗商品庫存與短板現況</div>
+          <div id="capacities-list">
+            載入中...
+          </div>
+          <button class="btn btn-outline btn-block" style="margin-top: 12px;" onclick="loadDashboard()">
+            🔄 重新整理庫存看板
+          </button>
+        </div>
+
+        <!-- 現場 3 秒抽盤 (Cycle Counting) -->
+        <div class="card">
+          <div class="card-title">⏱️ 現場單品 3 秒循環隨手抽盤</div>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            隨抽隨填！今日盤點實數將優先取代 ERP 帳面數量，實現眼見為憑的雙軌庫存融合。
+          </p>
+
+          <div class="form-group">
+            <label class="form-label">選擇抽盤材料品號</label>
+            <select id="cc-item-code" class="form-select"></select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">現場實盤數量 (Actual Quantity)</label>
+            <input type="number" id="cc-qty" class="form-input" min="0" placeholder="填入實際盤點總件數">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">盤點人員</label>
+            <input type="text" id="cc-staff" class="form-input" value="現場營運組">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">備註 (選填)</label>
+            <input type="text" id="cc-note" class="form-input" placeholder="例如：海軍藍長側板抽查">
+          </div>
+
+          <button class="btn btn-primary btn-block" onclick="submitCycleCount()">
+            登記抽盤實數 (即時校準庫存)
+          </button>
+        </div>
+
+      </div>
+
+      <!-- ERP 貼上清洗與在途採購清單 -->
+      <div class="grid grid-2" style="margin-top: 20px;">
+        
+        <!-- ERP 匯入清洗 -->
+        <div class="card">
+          <div class="card-title">🧹 ERP 原始資料一鍵貼上清洗</div>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+            從 ERP 匯出的 Excel 清冊直接全選複製貼入下方。系統自動過濾小計、合計列，並鎖定 640 倉。
+          </p>
+          <textarea id="erp-paste-text" class="form-textarea" rows="6" placeholder="請在此貼上 ERP Excel 複製之內容 (包含品號、品名、庫別、數量等)..."></textarea>
+          <div style="display:flex; gap: 8px; margin-top: 10px;">
+            <button class="btn btn-primary" style="flex:1;" onclick="importPastedERP()">
+              開始一鍵清洗匯入
+            </button>
+            <button class="btn btn-outline" onclick="resetSampleERP()">
+              載入真實範例資料 (175筆)
+            </button>
+          </div>
+        </div>
+
+        <!-- 缺料採購看板 -->
+        <div class="card">
+          <div class="card-title">🔔 缺料採購與最晚下單看板</div>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+            黃燈預約自動生成之採購待辦單，標註最晚叫貨日（活動日 - 15天）。
+          </p>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>採購單號</th>
+                  <th>品名或方案</th>
+                  <th>缺量</th>
+                  <th>最晚下單日</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody id="pending-pos-tbody">
+                <tr><td colspan="5" style="text-align:center; color:#94a3b8;">無待採購項目</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <div id="loading" class="loading-overlay">
+    <div>⏳ 系統處理中，請稍候...</div>
+  </div>
+
+  <script>
+    let globalOverview = null;
+
+    // 初始化設定
+    window.onload = function() {
+      // 預設活動日為 3 天後
+      const defaultDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+      document.getElementById("bk-date").value = defaultDate.toISOString().split("T")[0];
+      loadDashboard();
+    };
+
+    function showLoading(show) {
+      document.getElementById("loading").style.display = show ? "flex" : "none";
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.getElementById(tabId).classList.add("active");
+      event.target.classList.add("active");
+    }
+
+    // 載入儀表板主資料
+    function loadDashboard() {
+      showLoading(true);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          if (!res.success) {
+            alert("載入失敗: " + res.message);
+            return;
+          }
+          globalOverview = res;
+          renderCapacities(res.capacities);
+          renderMaterialSelect(res.materials);
+          renderRecentBookings(res.recentBookings);
+          renderPendingPOs(res.pendingPOs);
+          runLiveEligibilityCheck();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("連線錯誤: " + err);
+        })
+        .api_getDashboardOverview();
+    }
+
+    // 渲染商品產能清單
+    function renderCapacities(caps) {
+      const el = document.getElementById("capacities-list");
+      let html = "";
+      Object.keys(caps).forEach(id => {
+        const p = caps[id];
+        html += `
+          <div class="prod-badge-item" style="border-left: 4px solid var(--primary);">
+            <div>
+              <strong>${p.productName}</strong>
+              <div style="font-size:12px; color:#64748b;">短板: ${p.bottleneckCategory}</div>
+            </div>
+            <div style="text-align:right;">
+              <span style="font-size:18px; font-weight:700; color:var(--primary);">${p.maxCapacity}</span> 套
+            </div>
+          </div>
+        `;
+      });
+      el.innerHTML = html;
+    }
+
+    // 渲染抽盤材料下拉選單
+    function renderMaterialSelect(mats) {
+      const sel = document.getElementById("cc-item-code");
+      sel.innerHTML = mats.map(m => `
+        <option value="${m.itemCode}">[${m.category}] ${m.itemName} (${m.color})</option>
+      `).join("");
+    }
+
+    // 渲染近期預約表格
+    function renderRecentBookings(list) {
+      const tbody = document.getElementById("recent-bookings-tbody");
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8;">尚無預約明細</td></tr>';
+        return;
+      }
+      tbody.innerHTML = list.map(b => `
+        <tr>
+          <td><strong>${b.bookingNo}</strong></td>
+          <td>${b.eventDate}</td>
+          <td>${b.productName}</td>
+          <td>${b.qty}套</td>
+          <td>${b.groupName}</td>
+          <td><span class="status-badge ${b.light}">${b.light}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    // 渲染待辦採購單表格
+    function renderPendingPOs(list) {
+      const tbody = document.getElementById("pending-pos-tbody");
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8;">無待採購項目</td></tr>';
+        return;
+      }
+      tbody.innerHTML = list.map(p => `
+        <tr>
+          <td><strong>${p.poNumber}</strong></td>
+          <td>${p.itemName}</td>
+          <td style="color:#b91c1c; font-weight:700;">+${p.qty}</td>
+          <td>${p.deadline}</td>
+          <td><span style="color:#f59e0b; font-weight:600;">${p.status}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    // 即時試算 (Live Eligibility Check)
+    function runLiveEligibilityCheck() {
+      const dateVal = document.getElementById("bk-date").value;
+      const prodVal = document.getElementById("bk-product").value;
+      const qtyVal = Number(document.getElementById("bk-qty").value) || 0;
+
+      if (!dateVal) return;
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) return;
+          
+          // 更新狀態面板
+          const panel = document.getElementById("status-box");
+          const badge = document.getElementById("status-badge");
+          const text = document.getElementById("status-text");
+          const submitBtn = document.getElementById("btn-submit-booking");
+
+          panel.className = "status-panel " + res.light;
+          badge.className = "status-badge " + res.light;
+          
+          if (res.light === "GREEN") {
+            badge.innerText = "🟢 綠燈 (正常接單)";
+            submitBtn.disabled = false;
+          } else if (res.light === "YELLOW") {
+            badge.innerText = "🟡 黃燈 (需採購叫貨)";
+            submitBtn.disabled = false;
+          } else {
+            badge.innerText = "🔴 紅燈 (禁止接單)";
+            submitBtn.disabled = true; // 強制阻擋送單
+          }
+
+          text.innerText = res.statusText;
+
+          // 更新指標
+          document.getElementById("stat-days-diff").innerText = res.daysDiff + " 天";
+          document.getElementById("stat-safety-floor").innerText = 
+            (res.isWeekend ? "假日保留 " : "平日保留 ") + res.safetyFloor + " 份";
+          document.getElementById("stat-max-avail").innerText = res.maxAvailableForBooking + " 套";
+          document.getElementById("stat-bottleneck").innerText = res.bottleneckCategory;
+
+          const deadlineRow = document.getElementById("stat-order-deadline-row");
+          if (res.procurementNeeded && res.latestOrderDate) {
+            deadlineRow.style.display = "flex";
+            document.getElementById("stat-order-deadline").innerText = res.latestOrderDate;
+          } else {
+            deadlineRow.style.display = "none";
+          }
+        })
+        .api_checkEligibility(dateVal, prodVal, qtyVal);
+    }
+
+    // 送出預約
+    function submitBookingForm() {
+      const data = {
+        eventDate: document.getElementById("bk-date").value,
+        productId: document.getElementById("bk-product").value,
+        qty: Number(document.getElementById("bk-qty").value),
+        groupName: document.getElementById("bk-group").value,
+        phone: document.getElementById("bk-phone").value,
+        note: document.getElementById("bk-note").value
+      };
+
+      if (!data.eventDate || !data.qty) {
+        alert("請確認活動日期與預約套數！");
+        return;
+      }
+
+      showLoading(true);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          if (!res.success) {
+            alert("❌ 送單失敗: " + res.message);
+            return;
+          }
+          let msg = `✅ 預約成功登記！\n預約單號: ${res.bookingNo}\n狀態: ${res.light === "YELLOW" ? "🟡 黃燈(需採購)" : "🟢 綠燈(充足)"}`;
+          if (res.poNumber) {
+            msg += `\n已自動生成缺料採購單: ${res.poNumber}`;
+          }
+          alert(msg);
+          // 清空部分表單並重新載入
+          document.getElementById("bk-group").value = "";
+          document.getElementById("bk-phone").value = "";
+          document.getElementById("bk-note").value = "";
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("送單失敗: " + err);
+        })
+        .api_submitBooking(data);
+    }
+
+    // 登記抽盤
+    function submitCycleCount() {
+      const itemCode = document.getElementById("cc-item-code").value;
+      const qty = document.getElementById("cc-qty").value;
+      const staff = document.getElementById("cc-staff").value;
+      const note = document.getElementById("cc-note").value;
+
+      if (qty === "" || isNaN(Number(qty))) {
+        alert("請輸入有效的實盤數量！");
+        return;
+      }
+
+      showLoading(true);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          if (!res.success) {
+            alert("抽盤登記失敗: " + res.message);
+            return;
+          }
+          alert(`✅ 抽盤登記完成！\n品號: ${res.itemCode}\n實盤: ${res.actualQty} | ERP帳面: ${res.erpQty}\n盤差: ${res.diff} (${res.status})\n生效庫存已即時校準！`);
+          document.getElementById("cc-qty").value = "";
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("抽盤失敗: " + err);
+        })
+        .api_recordCycleCount(itemCode, Number(qty), staff, note);
+    }
+
+    // 匯入貼上的 ERP
+    function importPastedERP() {
+      const text = document.getElementById("erp-paste-text").value;
+      if (!text.trim()) {
+        alert("請貼入 ERP 內容！");
+        return;
+      }
+      showLoading(true);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          document.getElementById("erp-paste-text").value = "";
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("清洗失敗: " + err);
+        })
+        .api_importERPPastedText(text);
+    }
+
+    // 載入真實 ERP 範例資料
+    function resetSampleERP() {
+      if (!confirm("確定要將 ERP 資料重置為 175 筆真實原始報表資料嗎？")) return;
+      showLoading(true);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("重置失敗: " + err);
+        })
+        .api_resetSampleERP();
+    }
+  </script>
+</body>
+</html>

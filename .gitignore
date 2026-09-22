@@ -1,0 +1,33 @@
+# 專案私密與參考資料隔離
+/參考資料不要上推/
+/參考資料/
+scratch/
+
+# 環境變數與機密設定
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+service_account*.json
+
+# 依賴與打包暫存
+node_modules/
+dist/
+build/
+.cache/
+
+# 系統與 IDE 檔案
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# 編輯器暫存
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
