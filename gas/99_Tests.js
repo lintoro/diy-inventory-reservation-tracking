@@ -452,5 +452,77 @@ function test_Phase6_AuthAndERPUpload() {
   return results;
 }
 
+/**
+ * 階段七單元測試：活動用料抽屜、最晚下單提醒與散客保底動態調整驗證
+ */
+function test_Phase7_DrawerAndSafetyFloor() {
+  const results = {
+    testName: "階段七測試：活動用料抽屜與散客保底動態調整驗證",
+    timestamp: new Date().toISOString(),
+    passed: true,
+    details: []
+  };
+
+  function assert(condition, description) {
+    results.details.push({
+      item: description,
+      status: condition ? "PASS" : "FAIL"
+    });
+    if (!condition) results.passed = false;
+  }
+
+  // 1. 驗證保底預設值為 10 / 20
+  const initFloor = getSafetyFloorConfig();
+  assert(initFloor.weekday === 10, "預設平日散客保底為 10 份 (PASS)");
+  assert(initFloor.weekend === 20, "預設假日散客保底為 20 份 (PASS)");
+
+  // 2. 測試動態調整保底
+  setSafetyFloorConfig(12, 25, { "2026/10/10": 40 });
+  const updatedFloor = getSafetyFloorConfig();
+  assert(updatedFloor.weekday === 12 && updatedFloor.weekend === 25, "成功動態調整平日12/假日25 (PASS)");
+  
+  // 檢驗特殊日期保底
+  const specialDate = new Date("2026/10/10");
+  const specialFloorVal = getSafetyFloor(specialDate);
+  assert(specialFloorVal === 40, "特殊活動日(2026/10/10)成功覆蓋保底為 40 份 (PASS)");
+
+  // 還原保底為 10 / 20
+  setSafetyFloorConfig(10, 20, {});
+
+  // 3. 測試 6 大體驗方案組數與專屬用料抽屜資料結構
+  const caps = calculateProductCapacities();
+  const basket = caps["5"]; // 旁敲側擊 (折疊籃)
+  assert(basket && Array.isArray(basket.partsDetail), "折疊籃包含專屬用料 partsDetail 陣列 (PASS)");
+  assert(basket.partsDetail.length === 6, "折疊籃專屬用料完整包含 6 大部件 (PASS)");
+
+  // 檢驗部件是否具備短板標記與建議叫貨動作
+  const bottleneckPart = basket.partsDetail.find(p => p.isBottleneck === true);
+  assert(bottleneckPart !== undefined, `成功標註折疊籃木桶短板部件 (${bottleneckPart ? bottleneckPart.name : "none"}) (PASS)`);
+  assert(bottleneckPart && bottleneckPart.suggestedAction.includes("最晚下單"), "短板部件明確標註最晚叫貨下單提醒 (PASS)");
+
+  // 4. 測試 api_getDashboardOverview 回傳結構
+  const dashRes = api_getDashboardOverview();
+  assert(dashRes.success === true, "api_getDashboardOverview 呼叫成功 (PASS)");
+  assert(Array.isArray(dashRes.capacitiesList), "回傳 capacitiesList 為標準陣列，徹底消除前端 .map TypeError (PASS)");
+  assert(Array.isArray(dashRes.recentBookings), "回傳 recentBookings 為陣列 (PASS)");
+
+  // UI 彈窗回報
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const statusIcon = results.passed ? "✅" : "❌";
+    const detailMsg = results.details.map(d => `${d.status === "PASS" ? "✔️" : "✖️"} ${d.item}`).join("\n");
+    ui.alert(
+      `${statusIcon} ${results.testName}`,
+      `測試狀態: ${results.passed ? "全部通過 (SUCCESS)" : "存在失敗項目"}\n\n檢驗細項:\n${detailMsg}`,
+      ui.ButtonSet.OK
+    );
+  } catch (e) {
+    // 忽略非 UI 環境
+  }
+
+  return results;
+}
+
 // 注意：doGet 入口唯一定義在 05_API.js，此處不重複定義以避免函式衝突
+
 

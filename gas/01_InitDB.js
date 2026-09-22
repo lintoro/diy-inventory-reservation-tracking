@@ -18,10 +18,11 @@ function onOpen() {
     .addItem("8. 🧪 執行階段四驗證測試 (15天時間閘門)", "test_Phase4_TimeGateAndProjection")
     .addSeparator()
     .addItem("9. 🧪 執行階段六驗證測試 (帳號權限與ERP直傳)", "test_Phase6_AuthAndERPUpload")
+    .addItem("10. 🧪 執行階段七驗證測試 (活動抽屜與動態保底)", "test_Phase7_DrawerAndSafetyFloor")
     .addSeparator()
-    .addItem("10. 🖥️ 在試算表右側開啟操作面板 (Sidebar)", "menu_openSidebar")
-    .addItem("11. 🪟 在試算表中央開啟全功能視窗 (Dialog)", "menu_openDialog")
-    .addItem("12. 🌐 取得外部 Web App 獨立網址", "menu_openWebApp")
+    .addItem("11. 🖥️ 在試算表右側開啟操作面板 (Sidebar)", "menu_openSidebar")
+    .addItem("12. 🪟 在試算表中央開啟全功能視窗 (Dialog)", "menu_openDialog")
+    .addItem("13. 🌐 取得外部 Web App 獨立網址", "menu_openWebApp")
     .addToUi();
 }
 

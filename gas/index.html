@@ -2,11 +2,11 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>DIY 活動物料庫存與預約接單管理系統</title>
+  <title>DIY_物料庫存與預約接單管理系統</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <!-- SheetJS 瀏覽器端 Excel / CSV 解析引擎 (支援 .xlsx, .xls, .csv) -->
+  <!-- SheetJS 瀏覽器端 Excel / CSV 解析引擎 -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <style>
@@ -30,7 +30,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Noto Sans TC', sans-serif; }
     body { background-color: var(--bg); color: var(--text); line-height: 1.5; padding-bottom: 50px; }
     
-    /* 頂部 Header */
+    /* Header */
     .header {
       background: linear-gradient(135deg, #1e3a8a, #0f172a);
       color: white;
@@ -108,7 +108,7 @@
       font-weight: 700;
     }
     
-    .container { max-width: 1120px; margin: 24px auto; padding: 0 16px; }
+    .container { max-width: 1140px; margin: 24px auto; padding: 0 16px; }
     .tab-pane { display: none; }
     .tab-pane.active { display: block; }
 
@@ -127,6 +127,7 @@
       border: 1px solid var(--border);
       padding: 20px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      margin-bottom: 20px;
     }
     .card-title {
       font-size: 16px;
@@ -179,7 +180,6 @@
     .btn-success:hover { background: #059669; }
     .btn-warning { background: var(--yellow); color: white; }
     .btn-danger { background: var(--red); color: white; }
-    .btn-danger:hover { background: #dc2626; }
     .btn-outline { background: white; border: 1px solid var(--border); color: #334155; }
     .btn-outline:hover { background: #f1f5f9; }
     .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 6px; }
@@ -208,24 +208,48 @@
     .status-badge.YELLOW { background: var(--yellow); color: white; }
     .status-badge.RED { background: var(--red); color: white; }
 
-    /* 商品庫存徽章清單 */
-    .prod-badge-item {
+    /* 組數看板卡片 ＋ 抽屜樣式 */
+    .capacity-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #ffffff;
+      margin-bottom: 12px;
+      overflow: hidden;
+      transition: all 0.2s;
+    }
+    .capacity-card:hover { border-color: #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.03); }
+    .capacity-header {
+      padding: 14px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 10px 12px;
-      background: #f8fafc;
-      border-radius: 8px;
-      margin-bottom: 8px;
-      font-size: 14px;
+      cursor: pointer;
+      user-select: none;
+      background: #fafafa;
     }
-    .table-container { overflow-x: auto; margin-top: 10px; }
+    .capacity-header:hover { background: #f1f5f9; }
+    .capacity-title { font-size: 15px; font-weight: 700; color: #1e293b; }
+    .capacity-meta { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .capacity-stats { text-align: right; }
+    .capacity-num { font-size: 20px; font-weight: 800; color: var(--primary); }
+    
+    /* 抽屜內容 */
+    .drawer-content {
+      display: none;
+      padding: 14px 16px;
+      border-top: 1px dashed var(--border);
+      background: #ffffff;
+    }
+    .drawer-content.open { display: block; }
+    
+    /* 表格樣式 */
+    .table-container { overflow-x: auto; margin-top: 8px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
-    th { background: #f1f5f9; padding: 10px; font-weight: 600; border-bottom: 1px solid var(--border); color: #475569; }
-    td { padding: 10px; border-bottom: 1px solid var(--border); }
-    tr:hover td { background-color: #f8fafc; }
-
-    /* 檔案拖曳上傳區 */
+    th { background: #f8fafc; padding: 9px 10px; font-weight: 600; border-bottom: 1px solid var(--border); color: #475569; }
+    td { padding: 9px 10px; border-bottom: 1px solid var(--border); }
+    tr:hover td { background-color: #fcfcfc; }
+    
+    /* 拖曳區 */
     .drop-zone {
       border: 2px dashed #94a3b8;
       border-radius: 12px;
@@ -244,11 +268,7 @@
     .drop-subtext { font-size: 12px; color: #64748b; margin-top: 4px; }
 
     /* 登入視窗與 Modal */
-    .auth-container {
-      max-width: 420px;
-      margin: 60px auto;
-      padding: 0 16px;
-    }
+    .auth-container { max-width: 420px; margin: 60px auto; padding: 0 16px; }
     .modal-overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -294,7 +314,7 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* 狀態小標籤 */
+    /* 標籤小工具 */
     .tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
     .tag-active { background: #dcfce7; color: #15803d; }
     .tag-pending { background: #fef3c7; color: #b45309; }
@@ -302,6 +322,10 @@
     .tag-admin { background: #e0e7ff; color: #4338ca; }
     .tag-sales { background: #dbeafe; color: #1d4ed8; }
     .tag-inv { background: #f3e8ff; color: #7e22ce; }
+    .text-green { color: #10b981; font-weight: 600; }
+    .text-yellow { color: #d97706; font-weight: 600; }
+    .text-red { color: #ef4444; font-weight: 700; }
+    .highlight-row { background-color: #fff1f2 !important; }
   </style>
 </head>
 <body>
@@ -315,7 +339,7 @@
   <!-- 頂部 Header -->
   <div class="header">
     <div>
-      <h1>🚀 DIY 活動物料庫存與預約接單管理系統</h1>
+      <h1>🚀 DIY_物料庫存與預約接單管理系統</h1>
       <p>雙軌現場抽盤 ｜ BOM木桶短板 ｜ 15天交期時間閘門 ｜ 多角色工號管理</p>
     </div>
     <div id="header-user-box" class="user-profile" style="display: none;">
@@ -436,10 +460,8 @@
 
     <div class="container">
 
-      <!-- ================= TAB: ADMIN 人員帳號管理 ================= -->
+      <!-- ================= TAB 1: ADMIN 人員帳號管理 ================= -->
       <div id="tab-admin" class="tab-pane">
-        
-        <!-- 統計卡片 -->
         <div class="grid grid-admin-stat" style="margin-bottom: 20px;">
           <div class="card" style="border-left: 4px solid var(--purple);">
             <div style="font-size: 13px; color: var(--text-muted);">總註冊人數</div>
@@ -456,7 +478,6 @@
         </div>
 
         <div class="grid grid-2">
-          
           <!-- 待審核名冊 -->
           <div class="card">
             <div class="card-title">
@@ -475,7 +496,7 @@
                   </tr>
                 </thead>
                 <tbody id="pending-users-tbody">
-                  <tr><td colspan="5" style="text-align: center; color: #94a3b8;">讀取中...</td></tr>
+                  <tr><td colspan="5" style="text-align: center; color: #94a3b8;">目前無待審核申請</td></tr>
                 </tbody>
               </table>
             </div>
@@ -509,11 +530,10 @@
               確認建立人員帳號
             </button>
           </div>
-
         </div>
 
         <!-- 系統所有同仁名冊 -->
-        <div class="card" style="margin-top: 20px;">
+        <div class="card">
           <div class="card-title">
             <span class="card-title-text">👥 全體同仁名單與狀態管理</span>
             <button class="btn btn-outline btn-sm" onclick="loadUsersList()">🔄 刷新列表</button>
@@ -537,93 +557,103 @@
             </table>
           </div>
         </div>
-
       </div>
 
-      <!-- ================= TAB: 業務接單視角 ================= -->
+      <!-- ================= TAB 2: 業務接單視角 ================= -->
       <div id="tab-booking" class="tab-pane">
         <div class="grid grid-2">
           
-          <!-- 接單試算表單 -->
-          <div class="card">
-            <div class="card-title">🔍 預約速查與可接上限試算</div>
-            <div class="form-group">
-              <label class="form-label">預計活動日期</label>
-              <input type="date" id="bk-date" class="form-input" onchange="runLiveEligibilityCheck()">
-            </div>
-            <div class="form-group">
-              <label class="form-label">體驗方案商品</label>
-              <select id="bk-product" class="form-select" onchange="runLiveEligibilityCheck()">
-                <option value="1">1. 手能生巧 (HTB-50)</option>
-                <option value="2">2. 繪聲繪影 - 胖胖盒款</option>
-                <option value="3">3. 繪聲繪影 - TB-200款</option>
-                <option value="4">4. 繪聲繪影 - TB-9款</option>
-                <option value="5" selected>5. 旁敲側擊 (折疊籃 6 部件短板)</option>
-                <option value="6">6. 請多紙膠 (CTB-3215L 潘朵拉盒)</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">預約需求套數</label>
-              <input type="number" id="bk-qty" class="form-input" min="1" value="5" oninput="runLiveEligibilityCheck()">
-            </div>
+          <!-- 左側：接單試算表單 -->
+          <div>
+            <div class="card">
+              <div class="card-title">🔍 預約速查與可接上限試算</div>
+              <div class="form-group">
+                <label class="form-label">預計活動日期</label>
+                <input type="date" id="bk-date" class="form-input" onchange="runLiveEligibilityCheck()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">體驗方案商品</label>
+                <select id="bk-product" class="form-select" onchange="runLiveEligibilityCheck()">
+                  <option value="1">1. 手能生巧 (HTB-50)</option>
+                  <option value="2">2. 繪聲繪影 - 胖胖盒款</option>
+                  <option value="3">3. 繪聲繪影 - TB-200款</option>
+                  <option value="4">4. 繪聲繪影 - TB-9款</option>
+                  <option value="5" selected>5. 旁敲側擊 (折疊籃 6 部件短板)</option>
+                  <option value="6">6. 請多紙膠 (CTB-3215L 潘朵拉盒)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">預約需求套數</label>
+                <input type="number" id="bk-qty" class="form-input" min="1" value="5" oninput="runLiveEligibilityCheck()">
+              </div>
 
-            <!-- 即時動態燈號面板 -->
-            <div id="status-box" class="status-panel">
-              <span id="status-badge" class="status-badge">試算中</span>
-              <p id="status-text" style="font-weight: 500; font-size: 14px; margin-bottom: 8px;"></p>
-              
-              <div style="font-size: 13px; border-top: 1px dashed rgba(0,0,0,0.15); padding-top: 8px;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                  <span>活動日距今天數：</span><strong id="stat-days-diff">-</strong>
-                </div>
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                  <span>散客保底底線：</span><strong id="stat-safety-floor">-</strong>
-                </div>
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                  <span>當日可接單上限：</span><strong id="stat-max-avail">-</strong>
-                </div>
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                  <span>BOM短板木桶材料：</span><strong id="stat-bottleneck" style="color:#b91c1c;">-</strong>
-                </div>
-                <div id="stat-order-deadline-row" style="display:none; justify-content:space-between; color:#b45309; font-weight:700;">
-                  <span>最晚叫貨下單日：</span><strong id="stat-order-deadline">-</strong>
+              <!-- 即時動態燈號面板 -->
+              <div id="status-box" class="status-panel">
+                <span id="status-badge" class="status-badge">試算中</span>
+                <p id="status-text" style="font-weight: 500; font-size: 14px; margin-bottom: 8px;"></p>
+                
+                <div style="font-size: 13px; border-top: 1px dashed rgba(0,0,0,0.15); padding-top: 8px;">
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <span>活動日距今天數：</span><strong id="stat-days-diff">-</strong>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <span>現場散客保底預留：</span><strong id="stat-safety-floor" style="color:var(--primary);">-</strong>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <span>業務可接預約上限：</span><strong id="stat-max-avail">-</strong>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <span>BOM木桶短板材料：</span><strong id="stat-bottleneck" style="color:#b91c1c;">-</strong>
+                  </div>
+                  <div id="stat-order-deadline-row" style="display:none; justify-content:space-between; color:#b45309; font-weight:700;">
+                    <span>最晚叫貨下單日：</span><strong id="stat-order-deadline">-</strong>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <!-- 正式預約登記欄位 -->
-            <div style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px;">
-              <div class="form-group">
-                <label class="form-label">預約團體或窗口名稱</label>
-                <input type="text" id="bk-group" class="form-input" placeholder="例如：仁愛國小五年級校外教學">
+              <!-- 正式預約登記欄位 -->
+              <div style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px;">
+                <div class="form-group">
+                  <label class="form-label">預約團體或窗口名稱</label>
+                  <input type="text" id="bk-group" class="form-input" placeholder="例如：仁愛國小五年級校外教學">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">聯絡人電話</label>
+                  <input type="text" id="bk-phone" class="form-input" placeholder="例如：0912-345-678">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">備註說明</label>
+                  <input type="text" id="bk-note" class="form-input" placeholder="無特殊備註">
+                </div>
+                <button id="btn-submit-booking" class="btn btn-primary btn-block" onclick="submitBookingForm()" disabled>
+                  確認送單登記
+                </button>
               </div>
-              <div class="form-group">
-                <label class="form-label">聯絡人電話</label>
-                <input type="text" id="bk-phone" class="form-input" placeholder="例如：0912-345-678">
-              </div>
-              <div class="form-group">
-                <label class="form-label">備註說明</label>
-                <input type="text" id="bk-note" class="form-input" placeholder="無特殊備註">
-              </div>
-              <button id="btn-submit-booking" class="btn btn-primary btn-block" onclick="submitBookingForm()" disabled>
-                確認送單登記
-              </button>
             </div>
           </div>
 
-          <!-- 右側：當前商品即時可做組數一覽 -->
+          <!-- 右側：6 大方案組數看板與用料抽屜 ＋ 30天預約清單 -->
           <div>
-            <div class="card" style="margin-bottom: 20px;">
+            <!-- 組數看板 ＋ 活動抽屜 -->
+            <div class="card">
               <div class="card-title">
-                <span class="card-title-text">📊 6 大體驗方案可做組數現況</span>
+                <span class="card-title-text">📊 6 大體驗方案可做組數與用料抽屜</span>
                 <button class="btn btn-outline btn-sm" onclick="loadDashboard()">🔄 刷新</button>
               </div>
-              <div id="prod-capacities-list">載入中...</div>
+              <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                點擊任一活動卡片可展開抽屜，查看該活動所需原物料在庫量、換算套數與下單提醒。
+              </p>
+              <div id="prod-capacities-list-booking">
+                <!-- 動態注入抽屜卡片 -->
+              </div>
             </div>
 
-            <!-- 最新預約登記明細 -->
+            <!-- 最近預約登記清單 (今天起 30 天內) -->
             <div class="card">
-              <div class="card-title">📋 最近預約登記清單</div>
+              <div class="card-title">
+                <span class="card-title-text">📋 最近預約登記清單 (未來 30 天內)</span>
+                <span style="font-size: 12px; color: var(--text-muted);">依活動日排序</span>
+              </div>
               <div class="table-container">
                 <table>
                   <thead>
@@ -637,7 +667,7 @@
                     </tr>
                   </thead>
                   <tbody id="recent-bookings-tbody">
-                    <tr><td colspan="6" style="text-align:center;">載入中...</td></tr>
+                    <tr><td colspan="6" style="text-align:center; color:#94a3b8;">未來 30 天內暫無預約登記紀錄</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -647,11 +677,83 @@
         </div>
       </div>
 
-      <!-- ================= TAB: 庫存管理與 ERP 上傳視角 ================= -->
+      <!-- ================= TAB 3: 庫存管理與 ERP 上傳視角 ================= -->
       <div id="tab-manager" class="tab-pane">
         
+        <!-- 現場銷售預留（散客保底）調控面板 (庫管與 ADMIN 權限) -->
+        <div class="card" style="border-left: 4px solid var(--primary);">
+          <div class="card-title">
+            <span class="card-title-text">🛡️ 現場銷售預留（散客保底）彈性調控</span>
+            <span style="font-size: 12px; color: var(--text-muted);">庫管權限 ｜ 預設 10/20</span>
+          </div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+            散客保底數量為門市現場散客專屬保留量，業務團體預約將受此扣除保護。修改後系統將自動重新推移未來 45 天淨可用量。
+          </p>
+          <div class="grid grid-3" style="gap: 12px; align-items: flex-end;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">平日散客保底 (週一至五)</label>
+              <input type="number" id="sf-weekday" class="form-input" min="0" value="10">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">假日散客保底 (週六日/連假)</label>
+              <input type="number" id="sf-weekend" class="form-input" min="0" value="20">
+            </div>
+            <div>
+              <button class="btn btn-primary btn-block" onclick="saveSafetyFloorSettings()">
+                💾 儲存並重新推移
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6 大方案組數看板與活動用料抽屜 (庫存端同步視角) -->
+        <div class="card">
+          <div class="card-title">
+            <span class="card-title-text">📦 目前 6 大體驗方案組數狀況與專屬材料抽屜</span>
+            <button class="btn btn-outline btn-sm" onclick="loadDashboard()">🔄 刷新庫存</button>
+          </div>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            點擊各活動項目展開查看專屬原物料現存量、單份用量、木桶短板高亮與最晚下單建議。
+          </p>
+          <div id="prod-capacities-list-manager">
+            <!-- 動態注入抽屜卡片 -->
+          </div>
+        </div>
+
+        <!-- 未來 45 天指定日期庫存推移速查 (時間下拉選單) -->
+        <div class="card">
+          <div class="card-title">
+            <span class="card-title-text">📅 未來 45 天指定日期推移庫存速查</span>
+          </div>
+          <div class="grid grid-2" style="align-items: flex-end; margin-bottom: 14px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">選擇欲預估之未來日期</label>
+              <select id="proj-date-select" class="form-select" onchange="handleProjectionDateChange()"></select>
+            </div>
+            <div id="proj-date-meta" style="font-size: 13px; color: #475569; padding-bottom: 8px;">
+              載入推移中...
+            </div>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>商品名稱</th>
+                  <th>該日型態</th>
+                  <th>現場散客預留</th>
+                  <th>該日預估淨可用量</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody id="proj-date-tbody">
+                <tr><td colspan="5" style="text-align:center; color:#94a3b8;">請選擇上方日期速查</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- ERP 檔案直傳專用卡片 -->
-        <div class="card" style="margin-bottom: 20px;">
+        <div class="card">
           <div class="card-title">
             <span class="card-title-text">📂 ERP 報表檔案直傳與自動清洗</span>
             <span style="font-size: 12px; color: var(--text-muted);">免複製貼上 ｜ 支援 .xlsx, .xls, .csv</span>
@@ -665,7 +767,6 @@
             <input type="file" id="erp-file-input" style="display: none;" accept=".xlsx, .xls, .csv" onchange="handleFileSelected(event)">
           </div>
 
-          <!-- 檔案解析上傳結果反饋 -->
           <div id="upload-status-alert" style="display: none; margin-top: 14px; padding: 12px; border-radius: 8px; font-size: 13px;"></div>
 
           <!-- 備用文字貼上折疊區 -->
@@ -684,7 +785,6 @@
         </div>
 
         <div class="grid grid-2">
-          
           <!-- 現場 3 秒抽盤 -->
           <div class="card">
             <div class="card-title">⏱️ 門市現場 3 秒抽盤回報 (實數優先)</div>
@@ -727,39 +827,35 @@
                   </tr>
                 </thead>
                 <tbody id="pending-pos-tbody">
-                  <tr><td colspan="5" style="text-align:center;">無待採購項目</td></tr>
+                  <tr><td colspan="5" style="text-align:center; color:#94a3b8;">無待採購項目</td></tr>
                 </tbody>
               </table>
             </div>
           </div>
-
         </div>
+
       </div>
 
     </div>
 
   </div>
 
-  <!-- ==================== 前端邏輯 JS ==================== -->
+  <!-- ==================== 前端 JS 邏輯 ==================== -->
   <script>
-    let currentUser = null; // { empNo, name, role, mustChangePassword }
-    let cachedProducts = [];
-    let cachedMaterials = [];
+    let currentUser = null;
+    let cachedDashboardData = null;
 
-    // 初始化頁面
     window.addEventListener("DOMContentLoaded", function() {
       setupDragAndDrop();
       checkAuthSession();
     });
 
-    // 顯示載入中遮罩
     function showLoading(show, msg) {
       const el = document.getElementById("loading");
       if (msg) document.getElementById("loading-msg").innerText = msg;
       el.style.display = show ? "flex" : "none";
     }
 
-    // 檢查瀏覽器 Session
     function checkAuthSession() {
       const saved = sessionStorage.getItem("diy_user_session");
       if (saved) {
@@ -774,20 +870,17 @@
       showAuthSection(true);
     }
 
-    // 顯示登入或系統區域
     function showAuthSection(show) {
       document.getElementById("auth-section").style.display = show ? "block" : "none";
       document.getElementById("main-system").style.display = show ? "none" : "block";
       document.getElementById("header-user-box").style.display = show ? "none" : "flex";
     }
 
-    // 切換登入 / 申請視圖
     function showAuthView(view) {
       document.getElementById("card-login").style.display = (view === "login") ? "block" : "none";
       document.getElementById("card-register").style.display = (view === "register") ? "block" : "none";
     }
 
-    // 登入送出
     function handleLogin() {
       const empNo = document.getElementById("login-empno").value.trim();
       const pwd = document.getElementById("login-pwd").value;
@@ -815,7 +908,6 @@
         .api_login(empNo, pwd);
     }
 
-    // 申請送出
     function handleRegister() {
       const empNo = document.getElementById("reg-empno").value.trim();
       const name = document.getElementById("reg-name").value.trim();
@@ -844,7 +936,6 @@
         .api_registerUser(empNo, name, dept);
     }
 
-    // 登出
     function handleLogout() {
       sessionStorage.removeItem("diy_user_session");
       currentUser = null;
@@ -853,47 +944,39 @@
       showAuthView("login");
     }
 
-    // 根據使用者身份渲染系統頁面與權限防護
     function renderAppForUser() {
       if (!currentUser) return;
       showAuthSection(false);
 
-      // 設定頂部資訊
       document.getElementById("user-display-name").innerText = currentUser.name;
       document.getElementById("user-display-empno").innerText = "(" + currentUser.empNo + ")";
       document.getElementById("user-display-role").innerText = currentUser.role;
 
-      // 預設盤點人為當前登入者
       const ccStaffInput = document.getElementById("cc-staff");
       if (ccStaffInput) ccStaffInput.value = `${currentUser.name} (${currentUser.empNo})`;
 
-      // 檢查是否需要強制修改密碼
       if (currentUser.mustChangePassword) {
         document.getElementById("modal-must-change-pwd").style.display = "flex";
       } else {
         document.getElementById("modal-must-change-pwd").style.display = "none";
       }
 
-      // 權限分流與導覽頁籤呈現
       const btnAdmin = document.getElementById("tab-btn-admin");
       const btnBooking = document.getElementById("tab-btn-booking");
       const btnManager = document.getElementById("tab-btn-manager");
 
       if (currentUser.role === "ADMIN") {
-        // ADMIN: 三個頁面都可以切換使用
         btnAdmin.style.display = "inline-block";
         btnBooking.style.display = "inline-block";
         btnManager.style.display = "inline-block";
         switchTab("tab-admin");
         loadUsersList();
       } else if (currentUser.role === "SALES") {
-        // SALES: 僅預約與庫存速查
         btnAdmin.style.display = "none";
         btnBooking.style.display = "inline-block";
         btnManager.style.display = "none";
         switchTab("tab-booking");
       } else if (currentUser.role === "INVENTORY") {
-        // INVENTORY: 僅抽盤與 ERP 上傳
         btnAdmin.style.display = "none";
         btnBooking.style.display = "none";
         btnManager.style.display = "inline-block";
@@ -901,9 +984,9 @@
       }
 
       loadDashboard();
+      initProjectionDateSelect();
     }
 
-    // 首次/強制修改密碼送出
     function handleChangePasswordSubmit() {
       const oldPwd = document.getElementById("chg-old-pwd").value;
       const newPwd = document.getElementById("chg-new-pwd").value;
@@ -934,9 +1017,6 @@
           currentUser.mustChangePassword = false;
           sessionStorage.setItem("diy_user_session", JSON.stringify(currentUser));
           document.getElementById("modal-must-change-pwd").style.display = "none";
-          document.getElementById("chg-old-pwd").value = "";
-          document.getElementById("chg-new-pwd").value = "";
-          document.getElementById("chg-confirm-pwd").value = "";
         })
         .withFailureHandler(function(err) {
           showLoading(false);
@@ -945,7 +1025,6 @@
         .api_changePassword(currentUser.empNo, oldPwd, newPwd);
     }
 
-    // 切換分頁
     function switchTab(tabId) {
       document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
       document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
@@ -958,289 +1037,8 @@
       if (tabId === "tab-manager") document.getElementById("tab-btn-manager").classList.add("active");
     }
 
-    // ==================== ADMIN 帳號管理專區 ====================
-    function loadUsersList() {
-      if (!currentUser || currentUser.role !== "ADMIN") return;
-
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (!res.success) {
-            alert("讀取人員名冊失敗: " + res.message);
-            return;
-          }
-          renderUsersList(res.users);
-        })
-        .api_getUsers(currentUser.empNo);
-    }
-
-    function renderUsersList(users) {
-      const pendingTbody = document.getElementById("pending-users-tbody");
-      const allTbody = document.getElementById("all-users-tbody");
-
-      let total = users.length;
-      let pendingCount = 0;
-      let activeCount = 0;
-
-      const pendingUsers = users.filter(u => u.status === "PENDING");
-      pendingCount = pendingUsers.length;
-      activeCount = users.filter(u => u.status === "ACTIVE").length;
-
-      document.getElementById("stat-total-users").innerText = total;
-      document.getElementById("stat-pending-users").innerText = pendingCount;
-      document.getElementById("stat-active-users").innerText = activeCount;
-
-      // 渲染待審核列表
-      if (pendingUsers.length === 0) {
-        pendingTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8;">目前無待審核申請</td></tr>';
-      } else {
-        pendingTbody.innerHTML = pendingUsers.map(u => `
-          <tr>
-            <td><strong>${u.empNo}</strong></td>
-            <td>${u.name}</td>
-            <td style="font-size:12px; color:#64748b;">${u.createdAt}</td>
-            <td>
-              <select id="role-select-${u.empNo}" class="form-select" style="padding:4px 8px; font-size:12px; width:auto;">
-                <option value="SALES" selected>業務 (SALES)</option>
-                <option value="INVENTORY">庫存 (INVENTORY)</option>
-                <option value="ADMIN">管理 (ADMIN)</option>
-              </select>
-            </td>
-            <td>
-              <button class="btn btn-success btn-sm" onclick="approveUser('${u.empNo}')">核准開通</button>
-            </td>
-          </tr>
-        `).join("");
-      }
-
-      // 渲染全體同仁名單
-      allTbody.innerHTML = users.map(u => {
-        let roleTag = `<span class="tag tag-sales">業務 (SALES)</span>`;
-        if (u.role === "ADMIN") roleTag = `<span class="tag tag-admin">管理者 (ADMIN)</span>`;
-        if (u.role === "INVENTORY") roleTag = `<span class="tag tag-inv">庫存 (INVENTORY)</span>`;
-
-        let statusTag = `<span class="tag tag-active">正常啟用</span>`;
-        if (u.status === "PENDING") statusTag = `<span class="tag tag-pending">待審核</span>`;
-        if (u.status === "DISABLED") statusTag = `<span class="tag tag-disabled">已停用</span>`;
-
-        const isSuperAdmin = (u.empNo === "B111014");
-        const toggleBtn = isSuperAdmin ? `<span style="font-size:11px; color:#94a3b8;">最高管理員</span>` : `
-          <button class="btn btn-outline btn-sm" onclick="toggleUserStatus('${u.empNo}', '${u.status === "ACTIVE" ? "DISABLED" : "ACTIVE"}')">
-            ${u.status === "ACTIVE" ? "🛑 停用" : "🟢 啟用"}
-          </button>
-        `;
-
-        return `
-          <tr>
-            <td><strong>${u.empNo}</strong></td>
-            <td>${u.name}</td>
-            <td>${roleTag}</td>
-            <td>${statusTag}</td>
-            <td>${u.mustChangePassword ? '<span style="color:#d97706; font-weight:600;">是</span>' : '<span style="color:#10b981;">已變更</span>'}</td>
-            <td style="font-size:12px; color:#64748b;">${u.lastLoginAt || "從未登入"}</td>
-            <td>
-              <div style="display:flex; gap:6px; align-items:center;">
-                ${toggleBtn}
-                <button class="btn btn-outline btn-sm" onclick="resetUserPassword('${u.empNo}')" title="重設為 000000">
-                  🔑 重設密碼
-                </button>
-              </div>
-            </td>
-          </tr>
-        `;
-      }).join("");
-    }
-
-    // 核准審核
-    function approveUser(empNo) {
-      const role = document.getElementById("role-select-" + empNo).value;
-      if (!confirm(`確定要核准工號 [${empNo}] 並指派為 [${role}] 嗎？`)) return;
-
-      showLoading(true, "核准開通中...");
-      google.script.run
-        .withSuccessHandler(function(res) {
-          showLoading(false);
-          alert(res.message);
-          loadUsersList();
-        })
-        .withFailureHandler(function(err) {
-          showLoading(false);
-          alert("審核失敗: " + err);
-        })
-        .api_approveUser(currentUser.empNo, empNo, role);
-    }
-
-    // 切換同仁狀態
-    function toggleUserStatus(empNo, targetStatus) {
-      const actionName = (targetStatus === "ACTIVE") ? "啟用" : "停用";
-      if (!confirm(`確定要【${actionName}】工號 [${empNo}] 嗎？`)) return;
-
-      showLoading(true, `${actionName}處理中...`);
-      google.script.run
-        .withSuccessHandler(function(res) {
-          showLoading(false);
-          alert(res.message);
-          loadUsersList();
-        })
-        .withFailureHandler(function(err) {
-          showLoading(false);
-          alert("操作失敗: " + err);
-        })
-        .api_toggleUserStatus(currentUser.empNo, empNo, targetStatus);
-    }
-
-    // 重設密碼
-    function resetUserPassword(empNo) {
-      if (!confirm(`確定要將工號 [${empNo}] 的密碼重設為 000000 嗎？（同仁下次登入必須設定新密碼）`)) return;
-
-      showLoading(true, "重設密碼中...");
-      google.script.run
-        .withSuccessHandler(function(res) {
-          showLoading(false);
-          alert(res.message);
-          loadUsersList();
-        })
-        .withFailureHandler(function(err) {
-          showLoading(false);
-          alert("重設失敗: " + err);
-        })
-        .api_resetUserPassword(currentUser.empNo, empNo);
-    }
-
-    // 管理者手動新增人員
-    function handleAdminCreateUser() {
-      const empNo = document.getElementById("admin-new-empno").value.trim();
-      const name = document.getElementById("admin-new-name").value.trim();
-      const role = document.getElementById("admin-new-role").value;
-
-      if (!empNo || !name) {
-        alert("請輸入工號與姓名！");
-        return;
-      }
-
-      showLoading(true, "建立同仁中...");
-      google.script.run
-        .withSuccessHandler(function(res) {
-          showLoading(false);
-          alert(res.message);
-          if (res.success) {
-            document.getElementById("admin-new-empno").value = "";
-            document.getElementById("admin-new-name").value = "";
-            loadUsersList();
-          }
-        })
-        .withFailureHandler(function(err) {
-          showLoading(false);
-          alert("建立失敗: " + err);
-        })
-        .api_createUserByAdmin(currentUser.empNo, empNo, name, role);
-    }
-
-    // ==================== ERP 檔案直傳與 SheetJS 解析 ====================
-    function setupDragAndDrop() {
-      const dropZone = document.getElementById("drop-zone");
-      if (!dropZone) return;
-
-      ['dragenter', 'dragover'].forEach(eventName => {
-        dropZone.addEventListener(eventName, e => {
-          e.preventDefault();
-          e.stopPropagation();
-          dropZone.classList.add("dragover");
-        }, false);
-      });
-
-      ['dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, e => {
-          e.preventDefault();
-          e.stopPropagation();
-          dropZone.classList.remove("dragover");
-        }, false);
-      });
-
-      dropZone.addEventListener('drop', e => {
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        if (files && files.length > 0) {
-          parseAndUploadERPFile(files[0]);
-        }
-      }, false);
-    }
-
-    function handleFileSelected(event) {
-      const file = event.target.files[0];
-      if (file) {
-        parseAndUploadERPFile(file);
-      }
-    }
-
-    function parseAndUploadERPFile(file) {
-      const ext = file.name.split('.').pop().toLowerCase();
-      if (!['xlsx', 'xls', 'csv'].includes(ext)) {
-        alert("❌ 僅支援 .xlsx、.xls 或 .csv 格式之檔案！");
-        return;
-      }
-
-      showLoading(true, `正在以 SheetJS 解析 ${file.name}...`);
-      const reader = new FileReader();
-
-      reader.onload = function(e) {
-        try {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const firstSheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[firstSheetName];
-          
-          // 轉為二維陣列 (header: 1)
-          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
-
-          if (!rows || rows.length <= 1) {
-            showLoading(false);
-            alert("檔案解析成功但無有效資料內容！");
-            return;
-          }
-
-          showLoading(true, `檔案解析成功 (${rows.length} 列)，正在進行 640 倉過濾清洗與推移計算...`);
-
-          // 呼叫後端 API
-          google.script.run
-            .withSuccessHandler(function(res) {
-              showLoading(false);
-              const alertBox = document.getElementById("upload-status-alert");
-              if (res.success) {
-                alertBox.style.display = "block";
-                alertBox.style.background = "var(--green-bg)";
-                alertBox.style.color = "#065f46";
-                alertBox.style.border = "1px solid #a7f3d0";
-                alertBox.innerText = res.message;
-                alert(res.message);
-                loadDashboard();
-              } else {
-                alertBox.style.display = "block";
-                alertBox.style.background = "var(--red-bg)";
-                alertBox.style.color = "#991b1b";
-                alertBox.style.border = "1px solid #fecaca";
-                alertBox.innerText = "❌ " + res.message;
-                alert("上傳失敗: " + res.message);
-              }
-              document.getElementById("erp-file-input").value = "";
-            })
-            .withFailureHandler(function(err) {
-              showLoading(false);
-              alert("上傳清洗出錯: " + err);
-            })
-            .api_uploadAndCleanERP(rows);
-
-        } catch (err) {
-          showLoading(false);
-          alert("檔案解析失敗: " + err.message);
-        }
-      };
-
-      reader.readAsArrayBuffer(file);
-    }
-
-    // ==================== 儀表板資料載入與即時連動 ====================
+    // ==================== 儀表板資料與抽屜渲染 ====================
     function loadDashboard() {
-      // 預設日期為明天
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const dateInput = document.getElementById("bk-date");
@@ -1250,49 +1048,141 @@
 
       google.script.run
         .withSuccessHandler(function(res) {
-          if (!res.success) return;
-          cachedProducts = res.products;
-          cachedMaterials = res.materials;
+          if (!res.success) {
+            console.error("載入儀表板異常: " + res.message);
+            return;
+          }
+          cachedDashboardData = res;
 
-          renderCapacities(res.capacities);
+          // 1. 安全提取陣列 (解決 .map TypeError)
+          let capsArray = [];
+          if (Array.isArray(res.capacitiesList)) {
+            capsArray = res.capacitiesList;
+          } else if (res.capacities && typeof res.capacities === "object") {
+            capsArray = Object.keys(res.capacities).map(k => res.capacities[k]);
+          }
+
+          // 2. 渲染組數看板 ＋ 抽屜 (業務端 與 庫存端)
+          renderCapacitiesDrawers("prod-capacities-list-booking", capsArray, res.safetyFloorConfig);
+          renderCapacitiesDrawers("prod-capacities-list-manager", capsArray, res.safetyFloorConfig);
+
+          // 3. 渲染物料下拉選單
           renderMaterialSelect(res.materials);
+
+          // 4. 渲染未來 30 天預約清單
           renderRecentBookings(res.recentBookings);
+
+          // 5. 渲染在途採購
           renderPendingPOs(res.pendingPOs);
 
+          // 6. 更新保底輸入框預設值
+          if (res.safetyFloorConfig) {
+            document.getElementById("sf-weekday").value = res.safetyFloorConfig.weekday || 10;
+            document.getElementById("sf-weekend").value = res.safetyFloorConfig.weekend || 20;
+          }
+
+          // 7. 觸發試算
           runLiveEligibilityCheck();
+        })
+        .withFailureHandler(function(err) {
+          console.error("api_getDashboardOverview 失敗: " + err);
         })
         .api_getDashboardOverview();
     }
 
-    function renderCapacities(caps) {
-      const container = document.getElementById("prod-capacities-list");
-      if (!caps) return;
-      container.innerHTML = caps.map(p => `
-        <div class="prod-badge-item">
-          <div>
-            <strong>${p.productName}</strong>
-            <div style="font-size:12px; color:#64748b;">短板限制：${p.bottleneckCategory}</div>
+    // 核心：渲染活動項目卡片與用料抽屜
+    function renderCapacitiesDrawers(containerId, capsList, sfConfig) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      if (!capsList || capsList.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:16px; color:#94a3b8;">暫無組數資料</div>';
+        return;
+      }
+
+      const wkFloor = sfConfig ? sfConfig.weekday : 10;
+      const weFloor = sfConfig ? sfConfig.weekend : 20;
+
+      container.innerHTML = capsList.map((p, idx) => {
+        const total = p.maxCapacity || 0;
+        const netWk = Math.max(0, total - wkFloor);
+        const netWe = Math.max(0, total - weFloor);
+        const drawerId = `${containerId}-drawer-${p.productId}`;
+
+        // 建立專屬原物料用料清單
+        const parts = p.partsDetail || [];
+        const partsRows = parts.map(pt => `
+          <tr class="${pt.isBottleneck ? 'highlight-row' : ''}">
+            <td><strong>${pt.name}</strong> ${pt.isBottleneck ? '<span style="color:#ef4444; font-size:11px; font-weight:700;">[短板限制]</span>' : ''}</td>
+            <td style="text-align:center;">${pt.requiredPerUnit}</td>
+            <td style="text-align:center; font-weight:600;">${pt.poolTotal}</td>
+            <td style="text-align:center; font-weight:700; color:${pt.isBottleneck ? '#ef4444' : 'var(--primary)'};">${pt.possibleUnits} 套</td>
+            <td><span class="${pt.statusClass}">${pt.suggestedAction}</span></td>
+          </tr>
+        `).join("");
+
+        return `
+          <div class="capacity-card">
+            <div class="capacity-header" onclick="toggleDrawer('${drawerId}')">
+              <div>
+                <div class="capacity-title">
+                  <span>${p.productName}</span>
+                </div>
+                <div class="capacity-meta">
+                  短板材料：<span style="color:#b91c1c; font-weight:600;">${p.bottleneckCategory}</span>
+                </div>
+                <div style="font-size:11px; color:#64748b; margin-top:3px;">
+                  🔒 現場散客保底 (平日${wkFloor} / 假日${weFloor}) ➔ 業務可接約：平日 <b>${netWk}</b> 套 / 假日 <b>${netWe}</b> 套
+                </div>
+              </div>
+              <div class="capacity-stats">
+                <div class="capacity-num">${total} <span style="font-size:13px; font-weight:500; color:#64748b;">套</span></div>
+                <div style="font-size:12px; color:var(--primary); font-weight:600; margin-top:2px;">
+                  點此展開專屬用料抽屜 ▾
+                </div>
+              </div>
+            </div>
+
+            <!-- 抽屜展開區域 -->
+            <div id="${drawerId}" class="drawer-content">
+              <div style="font-size:13px; font-weight:700; color:#334155; margin-bottom:6px;">
+                📋 【${p.productName}】專屬原物料庫存與短板透視：
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>原物料名稱 / 規格花色</th>
+                      <th style="text-align:center;">單份需用</th>
+                      <th style="text-align:center;">當前在庫數</th>
+                      <th style="text-align:center;">換算可做</th>
+                      <th>最晚下單提醒 / 採購狀態</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${partsRows}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-          <div style="text-align:right;">
-            <span style="font-size:18px; font-weight:700; color:var(--primary);">${p.maxSets}</span>
-            <span style="font-size:12px; color:#64748b;"> 套</span>
-          </div>
-        </div>
-      `).join("");
+        `;
+      }).join("");
     }
 
-    function renderMaterialSelect(materials) {
-      const select = document.getElementById("cc-item-code");
-      if (!materials || select.options.length > 0) return;
-      select.innerHTML = materials.map(m => `
-        <option value="${m.itemCode}">${m.itemName} (${m.itemCode})</option>
-      `).join("");
+    // 切換抽屜展開/摺疊
+    function toggleDrawer(drawerId) {
+      const el = document.getElementById(drawerId);
+      if (el) {
+        el.classList.toggle("open");
+      }
     }
 
+    // 渲染最近預約紀錄 (今天起 30 天內)
     function renderRecentBookings(list) {
       const tbody = document.getElementById("recent-bookings-tbody");
       if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8;">無近期預約紀錄</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8; padding:20px 10px;">未來 30 天內暫無預約登記紀錄</td></tr>';
         return;
       }
       tbody.innerHTML = list.map(b => `
@@ -1310,7 +1200,7 @@
     function renderPendingPOs(list) {
       const tbody = document.getElementById("pending-pos-tbody");
       if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8;">無待採購項目</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:20px 10px;">無待採購項目</td></tr>';
         return;
       }
       tbody.innerHTML = list.map(p => `
@@ -1324,7 +1214,99 @@
       `).join("");
     }
 
-    // 即時試算
+    function renderMaterialSelect(materials) {
+      const select = document.getElementById("cc-item-code");
+      if (!materials || select.options.length > 0) return;
+      select.innerHTML = materials.map(m => `
+        <option value="${m.itemCode}">${m.itemName} (${m.itemCode})</option>
+      `).join("");
+    }
+
+    // 庫管儲存現場散客保底
+    function saveSafetyFloorSettings() {
+      const weekday = Number(document.getElementById("sf-weekday").value);
+      const weekend = Number(document.getElementById("sf-weekend").value);
+
+      if (isNaN(weekday) || isNaN(weekend) || weekday < 0 || weekend < 0) {
+        alert("請輸入有效的散客保底數量！");
+        return;
+      }
+
+      showLoading(true, "儲存散客保底並重新推移 45 天中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("儲存保底失敗: " + err);
+        })
+        .api_updateSafetyFloor(currentUser.empNo, weekday, weekend, null);
+    }
+
+    // 初始化未來 45 天日期下拉選單
+    function initProjectionDateSelect() {
+      const select = document.getElementById("proj-date-select");
+      if (!select) return;
+      const today = new Date();
+      select.innerHTML = "";
+
+      for (let i = 1; i <= 45; i++) {
+        const d = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const dStr = `${y}/${m}/${day}`;
+        const dayOfWeek = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"][d.getDay()];
+        const isWe = (d.getDay() === 0 || d.getDay() === 6);
+        const opt = document.createElement("option");
+        opt.value = dStr;
+        opt.innerText = `${dStr} (${dayOfWeek}${isWe ? " - 假日" : " - 平日"})`;
+        select.appendChild(opt);
+      }
+      handleProjectionDateChange();
+    }
+
+    function handleProjectionDateChange() {
+      const select = document.getElementById("proj-date-select");
+      if (!select) return;
+      const dateVal = select.value;
+      if (!dateVal) return;
+
+      document.getElementById("proj-date-meta").innerText = `正在試算 ${dateVal} 推移淨可用量...`;
+      
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            document.getElementById("proj-date-meta").innerText = "試算失敗: " + res.message;
+            return;
+          }
+          document.getElementById("proj-date-meta").innerHTML = `
+            📅 <b>${res.date}</b> (${res.dateType}) ｜ 現場散客保底：<strong style="color:var(--primary);">${res.safetyFloor} 份</strong>
+          `;
+
+          const tbody = document.getElementById("proj-date-tbody");
+          const caps = res.capacities || {};
+          tbody.innerHTML = Object.keys(caps).map(k => {
+            const item = caps[k];
+            const isZero = (item.netQty <= 0);
+            return `
+              <tr>
+                <td><strong>${item.name}</strong></td>
+                <td>${res.dateType}</td>
+                <td>${res.safetyFloor} 份</td>
+                <td style="font-size:15px; font-weight:700; color:${isZero ? '#ef4444' : 'var(--primary)'};">${item.netQty} 套</td>
+                <td>${isZero ? '<span class="status-badge RED">需補貨</span>' : '<span class="status-badge GREEN">充足</span>'}</td>
+              </tr>
+            `;
+          }).join("");
+        })
+        .api_getProjectionByDate(dateVal);
+    }
+
+    // 業務即時試算
     function runLiveEligibilityCheck() {
       const dateVal = document.getElementById("bk-date").value;
       const prodVal = document.getElementById("bk-product").value;
@@ -1409,7 +1391,7 @@
         .api_submitBooking(data);
     }
 
-    // 登記抽盤
+    // 抽盤登記
     function submitCycleCount() {
       const itemCode = document.getElementById("cc-item-code").value;
       const qty = document.getElementById("cc-qty").value;
@@ -1440,7 +1422,106 @@
         .api_recordCycleCount(itemCode, Number(qty), staff, note);
     }
 
-    // 手動貼上文字清洗
+    // ERP 檔案拖曳與解析
+    function setupDragAndDrop() {
+      const dropZone = document.getElementById("drop-zone");
+      if (!dropZone) return;
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, e => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.add("dragover");
+        }, false);
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, e => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.remove("dragover");
+        }, false);
+      });
+
+      dropZone.addEventListener('drop', e => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files && files.length > 0) {
+          parseAndUploadERPFile(files[0]);
+        }
+      }, false);
+    }
+
+    function handleFileSelected(event) {
+      const file = event.target.files[0];
+      if (file) {
+        parseAndUploadERPFile(file);
+      }
+    }
+
+    function parseAndUploadERPFile(file) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+        alert("❌ 僅支援 .xlsx、.xls 或 .csv 格式之檔案！");
+        return;
+      }
+
+      showLoading(true, `正在以 SheetJS 解析 ${file.name}...`);
+      const reader = new FileReader();
+
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+
+          if (!rows || rows.length <= 1) {
+            showLoading(false);
+            alert("檔案解析成功但無有效資料內容！");
+            return;
+          }
+
+          showLoading(true, `檔案解析成功 (${rows.length} 列)，正在進行 640 倉過濾清洗與推移計算...`);
+
+          google.script.run
+            .withSuccessHandler(function(res) {
+              showLoading(false);
+              const alertBox = document.getElementById("upload-status-alert");
+              if (res.success) {
+                alertBox.style.display = "block";
+                alertBox.style.background = "var(--green-bg)";
+                alertBox.style.color = "#065f46";
+                alertBox.style.border = "1px solid #a7f3d0";
+                alertBox.innerText = res.message;
+                alert(res.message);
+                loadDashboard();
+              } else {
+                alertBox.style.display = "block";
+                alertBox.style.background = "var(--red-bg)";
+                alertBox.style.color = "#991b1b";
+                alertBox.style.border = "1px solid #fecaca";
+                alertBox.innerText = "❌ " + res.message;
+                alert("上傳失敗: " + res.message);
+              }
+              document.getElementById("erp-file-input").value = "";
+            })
+            .withFailureHandler(function(err) {
+              showLoading(false);
+              alert("上傳清洗出錯: " + err);
+            })
+            .api_uploadAndCleanERP(rows);
+
+        } catch (err) {
+          showLoading(false);
+          alert("檔案解析失敗: " + err.message);
+        }
+      };
+
+      reader.readAsArrayBuffer(file);
+    }
+
     function importPastedERP() {
       const text = document.getElementById("erp-paste-text").value;
       if (!text.trim()) {
@@ -1476,6 +1557,173 @@
           alert("重置失敗: " + err);
         })
         .api_resetSampleERP();
+    }
+
+    // ADMIN 人員清單
+    function loadUsersList() {
+      if (!currentUser || currentUser.role !== "ADMIN") return;
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            alert("讀取人員名冊失敗: " + res.message);
+            return;
+          }
+          renderUsersList(res.users);
+        })
+        .api_getUsers(currentUser.empNo);
+    }
+
+    function renderUsersList(users) {
+      const pendingTbody = document.getElementById("pending-users-tbody");
+      const allTbody = document.getElementById("all-users-tbody");
+
+      let total = users.length;
+      const pendingUsers = users.filter(u => u.status === "PENDING");
+      const activeCount = users.filter(u => u.status === "ACTIVE").length;
+
+      document.getElementById("stat-total-users").innerText = total;
+      document.getElementById("stat-pending-users").innerText = pendingUsers.length;
+      document.getElementById("stat-active-users").innerText = activeCount;
+
+      if (pendingUsers.length === 0) {
+        pendingTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:16px 10px;">目前無待審核申請</td></tr>';
+      } else {
+        pendingTbody.innerHTML = pendingUsers.map(u => `
+          <tr>
+            <td><strong>${u.empNo}</strong></td>
+            <td>${u.name}</td>
+            <td style="font-size:12px; color:#64748b;">${u.createdAt}</td>
+            <td>
+              <select id="role-select-${u.empNo}" class="form-select" style="padding:4px 8px; font-size:12px; width:auto;">
+                <option value="SALES" selected>業務 (SALES)</option>
+                <option value="INVENTORY">庫存 (INVENTORY)</option>
+                <option value="ADMIN">管理 (ADMIN)</option>
+              </select>
+            </td>
+            <td>
+              <button class="btn btn-success btn-sm" onclick="approveUser('${u.empNo}')">核准開通</button>
+            </td>
+          </tr>
+        `).join("");
+      }
+
+      allTbody.innerHTML = users.map(u => {
+        let roleTag = `<span class="tag tag-sales">業務 (SALES)</span>`;
+        if (u.role === "ADMIN") roleTag = `<span class="tag tag-admin">管理者 (ADMIN)</span>`;
+        if (u.role === "INVENTORY") roleTag = `<span class="tag tag-inv">庫存 (INVENTORY)</span>`;
+
+        let statusTag = `<span class="tag tag-active">正常啟用</span>`;
+        if (u.status === "PENDING") statusTag = `<span class="tag tag-pending">待審核</span>`;
+        if (u.status === "DISABLED") statusTag = `<span class="tag tag-disabled">已停用</span>`;
+
+        const isSuperAdmin = (u.empNo === "B111014");
+        const toggleBtn = isSuperAdmin ? `<span style="font-size:11px; color:#94a3b8;">最高管理員</span>` : `
+          <button class="btn btn-outline btn-sm" onclick="toggleUserStatus('${u.empNo}', '${u.status === "ACTIVE" ? "DISABLED" : "ACTIVE"}')">
+            ${u.status === "ACTIVE" ? "🛑 停用" : "🟢 啟用"}
+          </button>
+        `;
+
+        return `
+          <tr>
+            <td><strong>${u.empNo}</strong></td>
+            <td>${u.name}</td>
+            <td>${roleTag}</td>
+            <td>${statusTag}</td>
+            <td>${u.mustChangePassword ? '<span style="color:#d97706; font-weight:600;">是</span>' : '<span style="color:#10b981;">已變更</span>'}</td>
+            <td style="font-size:12px; color:#64748b;">${u.lastLoginAt || "從未登入"}</td>
+            <td>
+              <div style="display:flex; gap:6px; align-items:center;">
+                ${toggleBtn}
+                <button class="btn btn-outline btn-sm" onclick="resetUserPassword('${u.empNo}')" title="重設為 000000">
+                  🔑 重設密碼
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function approveUser(empNo) {
+      const role = document.getElementById("role-select-" + empNo).value;
+      if (!confirm(`確定要核准工號 [${empNo}] 並指派為 [${role}] 嗎？`)) return;
+
+      showLoading(true, "核准開通中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadUsersList();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("審核失敗: " + err);
+        })
+        .api_approveUser(currentUser.empNo, empNo, role);
+    }
+
+    function toggleUserStatus(empNo, targetStatus) {
+      const actionName = (targetStatus === "ACTIVE") ? "啟用" : "停用";
+      if (!confirm(`確定要【${actionName}】工號 [${empNo}] 嗎？`)) return;
+
+      showLoading(true, `${actionName}處理中...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadUsersList();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("操作失敗: " + err);
+        })
+        .api_toggleUserStatus(currentUser.empNo, empNo, targetStatus);
+    }
+
+    function resetUserPassword(empNo) {
+      if (!confirm(`確定要將工號 [${empNo}] 的密碼重設為 000000 嗎？（同仁下次登入必須設定新密碼）`)) return;
+
+      showLoading(true, "重設密碼中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadUsersList();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("重設失敗: " + err);
+        })
+        .api_resetUserPassword(currentUser.empNo, empNo);
+    }
+
+    function handleAdminCreateUser() {
+      const empNo = document.getElementById("admin-new-empno").value.trim();
+      const name = document.getElementById("admin-new-name").value.trim();
+      const role = document.getElementById("admin-new-role").value;
+
+      if (!empNo || !name) {
+        alert("請輸入工號與姓名！");
+        return;
+      }
+
+      showLoading(true, "建立同仁中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            document.getElementById("admin-new-empno").value = "";
+            document.getElementById("admin-new-name").value = "";
+            loadUsersList();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("建立失敗: " + err);
+        })
+        .api_createUserByAdmin(currentUser.empNo, empNo, name, role);
     }
   </script>
 </body>

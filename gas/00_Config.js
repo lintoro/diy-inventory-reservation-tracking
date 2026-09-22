@@ -43,7 +43,7 @@ const CONFIG = {
   // 散客保底底線 (Hard Safety Floor)
   SAFETY_FLOOR: {
     WEEKDAY: 10,  // 平日 (週一至週五)
-    WEEKEND: 35   // 假日 (週六日與國定假日)
+    WEEKEND: 20   // 假日 (週六日與國定假日，預設10/20可由庫管動態調整)
   },
 
   // 叫貨交期時間閘門 (天數)
@@ -161,3 +161,51 @@ function getSpreadsheet() {
   // Container-bound script 存取自己的試算表只需要 spreadsheets scope，不需要 drive scope
   return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
 }
+
+/**
+ * 取得當前散客保底配置 (平日/假日/特殊日期)
+ * 優先採用 ScriptProperties，若無則採用 CONFIG.SAFETY_FLOOR (10/20)
+ */
+function getSafetyFloorConfig() {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const weekday = Number(props.getProperty("SAFETY_FLOOR_WEEKDAY")) || CONFIG.SAFETY_FLOOR.WEEKDAY;
+    const weekend = Number(props.getProperty("SAFETY_FLOOR_WEEKEND")) || CONFIG.SAFETY_FLOOR.WEEKEND;
+    let specialDates = {};
+    const specialJson = props.getProperty("SAFETY_FLOOR_SPECIAL_JSON");
+    if (specialJson) {
+      try {
+        specialDates = JSON.parse(specialJson);
+      } catch (e) {}
+    }
+    return {
+      weekday: weekday,
+      weekend: weekend,
+      specialDates: specialDates
+    };
+  } catch (err) {
+    return {
+      weekday: CONFIG.SAFETY_FLOOR.WEEKDAY,
+      weekend: CONFIG.SAFETY_FLOOR.WEEKEND,
+      specialDates: {}
+    };
+  }
+}
+
+/**
+ * 儲存散客保底配置 (庫管人員與管理者皆可設定)
+ */
+function setSafetyFloorConfig(weekday, weekend, specialDates) {
+  const props = PropertiesService.getScriptProperties();
+  if (weekday !== undefined && !isNaN(Number(weekday))) {
+    props.setProperty("SAFETY_FLOOR_WEEKDAY", String(Number(weekday)));
+  }
+  if (weekend !== undefined && !isNaN(Number(weekend))) {
+    props.setProperty("SAFETY_FLOOR_WEEKEND", String(Number(weekend)));
+  }
+  if (specialDates && typeof specialDates === "object") {
+    props.setProperty("SAFETY_FLOOR_SPECIAL_JSON", JSON.stringify(specialDates));
+  }
+  return getSafetyFloorConfig();
+}
+

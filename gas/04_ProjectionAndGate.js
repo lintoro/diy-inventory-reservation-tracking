@@ -13,14 +13,20 @@ function isHolidayOrWeekend(dateObj) {
 }
 
 /**
- * 取得指定日期的散客保底用量 (平日 10 / 假日 35)
+ * 取得指定日期的散客保底用量 (平日 10 / 假日 20，支援庫管動態調整與特殊日覆蓋)
  * @param {Date} dateObj 
  * @returns {number}
  */
 function getSafetyFloor(dateObj) {
-  return isHolidayOrWeekend(dateObj) 
-    ? CONFIG.SAFETY_FLOOR.WEEKEND 
-    : CONFIG.SAFETY_FLOOR.WEEKDAY;
+  const cfg = getSafetyFloorConfig();
+  const dateStr = Utilities.formatDate(dateObj, "Asia/Taipei", "yyyy/MM/dd");
+  
+  // 優先檢查特殊指定日期覆蓋
+  if (cfg.specialDates && cfg.specialDates[dateStr] !== undefined) {
+    return Number(cfg.specialDates[dateStr]);
+  }
+
+  return isHolidayOrWeekend(dateObj) ? cfg.weekend : cfg.weekday;
 }
 
 /**

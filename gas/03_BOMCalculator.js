@@ -28,9 +28,35 @@ function calculateProductCapacities(inventoryList) {
     return items.reduce((sum, it) => sum + (Number(it.effectiveQty) || 0), 0);
   }
 
+  // 輔助產生下單提醒文字
+  const today = new Date();
+  const deadlineDate = new Date(today.getTime() + (CONFIG.LEAD_TIME_DAYS * 24 * 60 * 60 * 1000));
+  const deadlineStr = Utilities.formatDate(deadlineDate, "Asia/Taipei", "yyyy/MM/dd");
+
+  function buildPartInfo(name, req, pool, poss, isBtl) {
+    let action = "🟢 庫存充足";
+    let statusClass = "text-green";
+    if (isBtl) {
+      action = `🔴 短板瓶頸！最晚下單：${deadlineStr}`;
+      statusClass = "text-red";
+    } else if (poss <= 50) {
+      action = `🟡 庫存水位偏低，建議追蹤叫貨`;
+      statusClass = "text-yellow";
+    }
+    return {
+      name: name,
+      requiredPerUnit: req,
+      poolTotal: pool,
+      possibleUnits: poss,
+      isBottleneck: isBtl,
+      suggestedAction: action,
+      statusClass: statusClass
+    };
+  }
+
   const results = {};
 
-  // 1. 手能生巧 (HTB-50 經典小工具 1:1)
+  // 1. 手能生巧
   const toolQty = getCategoryTotalQty("手能生巧");
   results["1"] = {
     productId: "1",
@@ -39,13 +65,13 @@ function calculateProductCapacities(inventoryList) {
     bottleneckCategory: "手能生巧 (HTB-50)",
     bottleneckLimit: toolQty,
     partsDetail: [
-      { name: "HTB-50 小工具/紅", requiredPerUnit: 1, poolTotal: toolQty, possibleUnits: toolQty }
+      buildPartInfo("HTB-50 小工具/紅", 1, toolQty, toolQty, true)
     ]
   };
 
-  // 2. 繪聲繪影系列 (共用料：框圖A7、顏料四色)
-  const frameQty = getCategoryTotalQty("繪聲繪影A");     // 著色框圖A7
-  const paintQty = getCategoryTotalQty("繪聲繪影B");     // 創意貼顏料四色
+  // 2. 繪聲繪影系列
+  const frameQty = getCategoryTotalQty("繪聲繪影A");
+  const paintQty = getCategoryTotalQty("繪聲繪影B");
   const sharedLimit = Math.min(frameQty, paintQty);
 
   // 2.1 胖胖盒款
@@ -62,9 +88,9 @@ function calculateProductCapacities(inventoryList) {
     bottleneckCategory: fatBoxBottleneck,
     bottleneckLimit: fatBoxMax,
     partsDetail: [
-      { name: "OF-A03L 胖胖盒專用箱", requiredPerUnit: 1, poolTotal: fatBoxQty, possibleUnits: fatBoxQty },
-      { name: "著色框圖A7 (共用)", requiredPerUnit: 1, poolTotal: frameQty, possibleUnits: frameQty },
-      { name: "創意貼顏料四色 (共用)", requiredPerUnit: 1, poolTotal: paintQty, possibleUnits: paintQty }
+      buildPartInfo("OF-A03L 胖胖盒專用箱", 1, fatBoxQty, fatBoxQty, fatBoxQty === fatBoxMax),
+      buildPartInfo("著色框圖A7 (三款共用)", 1, frameQty, frameQty, frameQty === fatBoxMax),
+      buildPartInfo("創意貼顏料四色 (三款共用)", 1, paintQty, paintQty, paintQty === fatBoxMax)
     ]
   };
 
@@ -82,9 +108,9 @@ function calculateProductCapacities(inventoryList) {
     bottleneckCategory: tb200Bottleneck,
     bottleneckLimit: tb200Max,
     partsDetail: [
-      { name: "TB-200 工具箱專用箱", requiredPerUnit: 1, poolTotal: tb200Qty, possibleUnits: tb200Qty },
-      { name: "著色框圖A7 (共用)", requiredPerUnit: 1, poolTotal: frameQty, possibleUnits: frameQty },
-      { name: "創意貼顏料四色 (共用)", requiredPerUnit: 1, poolTotal: paintQty, possibleUnits: paintQty }
+      buildPartInfo("TB-200 工具箱專用箱", 1, tb200Qty, tb200Qty, tb200Qty === tb200Max),
+      buildPartInfo("著色框圖A7 (三款共用)", 1, frameQty, frameQty, frameQty === tb200Max),
+      buildPartInfo("創意貼顏料四色 (三款共用)", 1, paintQty, paintQty, paintQty === tb200Max)
     ]
   };
 
@@ -102,13 +128,13 @@ function calculateProductCapacities(inventoryList) {
     bottleneckCategory: tb9Bottleneck,
     bottleneckLimit: tb9Max,
     partsDetail: [
-      { name: "TB-9 隨手工具箱專用箱", requiredPerUnit: 1, poolTotal: tb9Qty, possibleUnits: tb9Qty },
-      { name: "著色框圖A7 (共用)", requiredPerUnit: 1, poolTotal: frameQty, possibleUnits: frameQty },
-      { name: "創意貼顏料四色 (共用)", requiredPerUnit: 1, poolTotal: paintQty, possibleUnits: paintQty }
+      buildPartInfo("TB-9 隨手工具箱專用箱", 1, tb9Qty, tb9Qty, tb9Qty === tb9Max),
+      buildPartInfo("著色框圖A7 (三款共用)", 1, frameQty, frameQty, frameQty === tb9Max),
+      buildPartInfo("創意貼顏料四色 (三款共用)", 1, paintQty, paintQty, paintQty === tb9Max)
     ]
   };
 
-  // 3. 旁敲側擊 (折疊籃 FB-4531) - 6 大部件木桶短板運算
+  // 3. 旁敲側擊 (折疊籃)
   const basketParts = [
     { key: "frame", name: "框 (5色總量池)", category: "旁敲側擊A", ratio: 1 },
     { key: "bottom", name: "底 (5色總量池)", category: "旁敲側擊B", ratio: 1 },
@@ -120,20 +146,20 @@ function calculateProductCapacities(inventoryList) {
 
   let basketMinUnits = Infinity;
   let basketBottleneckName = "";
-  const basketDetails = basketParts.map(part => {
+  basketParts.forEach(part => {
     const totalQty = getCategoryTotalQty(part.category);
     const possibleUnits = Math.floor(totalQty / part.ratio);
     if (possibleUnits < basketMinUnits) {
       basketMinUnits = possibleUnits;
       basketBottleneckName = `${part.name} (短板限制)`;
     }
-    return {
-      partKey: part.key,
-      name: part.name,
-      requiredPerUnit: part.ratio,
-      poolTotal: totalQty,
-      possibleUnits: possibleUnits
-    };
+  });
+
+  const basketDetails = basketParts.map(part => {
+    const totalQty = getCategoryTotalQty(part.category);
+    const possibleUnits = Math.floor(totalQty / part.ratio);
+    const isBtl = (possibleUnits === basketMinUnits);
+    return buildPartInfo(part.name, part.ratio, totalQty, possibleUnits, isBtl);
   });
 
   results["5"] = {
@@ -145,7 +171,7 @@ function calculateProductCapacities(inventoryList) {
     partsDetail: basketDetails
   };
 
-  // 4. 請多紙膠 (潘朵拉盒 2色池，紙膠帶 B 待建檔)
+  // 4. 請多紙膠
   const pandoraBoxQty = getCategoryTotalQty("請多紙膠A");
   results["6"] = {
     productId: "6",
@@ -154,7 +180,7 @@ function calculateProductCapacities(inventoryList) {
     bottleneckCategory: "CTB-3215L 潘朵拉盒 (紙膠帶待建檔暫以盒為限)",
     bottleneckLimit: pandoraBoxQty,
     partsDetail: [
-      { name: "CTB-3215L 潘朵拉盒 (黑/白2色)", requiredPerUnit: 1, poolTotal: pandoraBoxQty, possibleUnits: pandoraBoxQty }
+      buildPartInfo("CTB-3215L 潘朵拉盒 (黑/白2色)", 1, pandoraBoxQty, pandoraBoxQty, true)
     ]
   };
 
