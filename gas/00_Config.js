@@ -6,8 +6,9 @@ const CONFIG = {
   // 試算表 ID（綁定型專案預設使用當前試算表）
   SPREADSHEET_ID: "1D_rEF40gUEuGtNHhOpE165p5fhTmtD14vORIPZclrQc",
 
-  // 7 大工作表名稱
+  // 8 大工作表名稱
   SHEETS: {
+    USER_ACCOUNTS: "00_使用者帳號表",
     ERP_RAW: "01_ERP原始匯入",
     MATERIAL_MASTER: "02_材料品號對照表",
     BOM_RULES: "03_BOM配方設定表",
@@ -15,6 +16,28 @@ const CONFIG = {
     PROCUREMENT: "05_在途採購清冊",
     BOOKING_RECORDS: "06_預約登記明細",
     ROLLING_PROJECTION: "07_45天動態推移底表"
+  },
+
+  // 帳號權限角色 (RBAC)
+  ROLES: {
+    ADMIN: "ADMIN",         // 系統管理者 (全功能存取與人員管理)
+    SALES: "SALES",         // 業務單位 (預約登記與庫存速查)
+    INVENTORY: "INVENTORY"  // 庫存管理單位 (現場抽盤與ERP上傳)
+  },
+
+  // 帳號狀態
+  USER_STATUS: {
+    ACTIVE: "ACTIVE",       // 正常啟用
+    PENDING: "PENDING",     // 待審核
+    DISABLED: "DISABLED"    // 停用
+  },
+
+  // 預設最高管理者工號設定 (純工號認證，不綁定 Gmail)
+  INITIAL_ADMIN: {
+    empNo: "B111014",
+    name: "系統管理者",
+    role: "ADMIN",
+    defaultPassword: "000000"
   },
 
   // 散客保底底線 (Hard Safety Floor)

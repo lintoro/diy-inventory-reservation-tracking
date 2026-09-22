@@ -253,3 +253,42 @@ function menu_importAndCleanERP() {
     ui.ButtonSet.OK
   );
 }
+
+/**
+ * 5. 前端檔案上傳專用 API：接收解析後之二維資料陣列直接清洗寫入
+ * @param {Array<Array>} fileRows 前端 SheetJS 解析之二維陣列
+ */
+function api_uploadAndCleanERP(fileRows) {
+  try {
+    if (!fileRows || !Array.isArray(fileRows) || fileRows.length === 0) {
+      return { success: false, message: "上傳的檔案無有效資料列！" };
+    }
+
+    // 若第一列為表頭（包含品號字樣），將其排除
+    let dataRows = fileRows;
+    const firstRowStr = (fileRows[0] || []).join(",");
+    if (firstRowStr.includes("品號") || firstRowStr.includes("料號")) {
+      dataRows = fileRows.slice(1);
+    }
+
+    if (dataRows.length === 0) {
+      return { success: false, message: "過濾表頭後無資料內容！" };
+    }
+
+    // 匯入與清洗
+    const importRes = importERPRawData(dataRows);
+    
+    // 自動連動刷新 45 天推移表
+    generate45DaysProjection();
+
+    return {
+      success: true,
+      totalParsedRows: dataRows.length,
+      validMaterialsCount: importRes.cleanResult ? importRes.cleanResult.count : 0,
+      message: `🎉 ERP 報表檔案上傳與清洗完成！\n總共解析 ${dataRows.length} 列資料，640 倉有效納入 ${importRes.cleanResult ? importRes.cleanResult.count : 0} 項物料，已自動連動刷新 45 天動態推移表！`
+    };
+  } catch (err) {
+    return { success: false, message: "檔案清洗寫入失敗: " + err.message };
+  }
+}
+

@@ -332,4 +332,125 @@ function test_Phase4_TimeGateAndProjection() {
   return results;
 }
 
+/**
+ * 階段六單元測試：帳號管理、工號認證、首次強制改密碼與 ERP 檔案直傳自動清洗驗證
+ */
+function test_Phase6_AuthAndERPUpload() {
+  const results = {
+    testName: "階段六測試：帳號權限管理與 ERP 檔案直傳清洗驗證",
+    timestamp: new Date().toISOString(),
+    passed: true,
+    details: []
+  };
+
+  function assert(condition, description) {
+    results.details.push({
+      item: description,
+      status: condition ? "PASS" : "FAIL"
+    });
+    if (!condition) results.passed = false;
+  }
+
+  // 1. 初始化並檢驗 00_使用者帳號表與初始管理者
+  initDatabase();
+  const ss = getSpreadsheet();
+  const userSheet = ss.getSheetByName(CONFIG.SHEETS.USER_ACCOUNTS);
+  assert(userSheet !== null, "[00_使用者帳號表] 工作表成功建立");
+
+  // 2. 測試初始最高管理者 (B111014)
+  const loginFail = api_login("B111014", "wrong_password");
+  assert(loginFail.success === false, "管理者錯誤密碼登入被成功阻擋 (PASS)");
+
+  const loginAdminSuccess = api_login("B111014", "000000");
+  assert(loginAdminSuccess.success === true, "管理者使用預設密碼 000000 成功登入 (PASS)");
+  assert(loginAdminSuccess.user.role === "ADMIN", "管理者角色確認為 ADMIN (PASS)");
+  assert(loginAdminSuccess.user.mustChangePassword === true, "初始管理者標記首次需改密碼 mustChangePassword === true (PASS)");
+
+  // 3. 測試新同仁線上申請
+  const testSalesEmpNo = "TEST_SALES_99";
+  const regRes = api_registerUser(testSalesEmpNo, "王大明", "業務課");
+  assert(regRes.success === true, `新同仁線上申請成功提交 (${testSalesEmpNo})`);
+
+  // 待審核狀態下嘗試登入 ➔ 應阻擋
+  const loginPending = api_login(testSalesEmpNo, "000000");
+  assert(loginPending.success === false && loginPending.message.includes("待審核"), "待審核同仁登入被正確攔截 (PASS)");
+
+  // 4. 管理者審核名單查詢與核准開通
+  const usersListRes = api_getUsers("B111014");
+  assert(usersListRes.success === true, "管理者成功查詢人員清單");
+  const targetInList = usersListRes.users.find(u => u.empNo === testSalesEmpNo);
+  assert(targetInList && targetInList.status === "PENDING", "申請人名單中狀態確認為 PENDING");
+
+  const approveRes = api_approveUser("B111014", testSalesEmpNo, "SALES");
+  assert(approveRes.success === true, "管理者成功核准開通並指派為 SALES 角色");
+
+  // 5. 測試核准後同仁登入與首次強制修改密碼
+  const loginApproved = api_login(testSalesEmpNo, "000000");
+  assert(loginApproved.success === true, "核准同仁以預設密碼 000000 成功登入");
+  assert(loginApproved.user.mustChangePassword === true, "核准同仁標記需修改密碼 (PASS)");
+
+  // 修改密碼：禁止使用預設密碼
+  const chgToSame = api_changePassword(testSalesEmpNo, "000000", "000000");
+  assert(chgToSame.success === false, "禁止修改為相同之預設密碼 000000 (PASS)");
+
+  // 正確修改密碼為新密碼
+  const chgSuccess = api_changePassword(testSalesEmpNo, "000000", "pass123456");
+  assert(chgSuccess.success === true, "成功修改新密碼並解除首次修改限制 (PASS)");
+
+  // 以新密碼登入
+  const loginNewPwd = api_login(testSalesEmpNo, "pass123456");
+  assert(loginNewPwd.success === true && loginNewPwd.user.mustChangePassword === false, "以新密碼登入成功且 mustChangePassword 為 false (PASS)");
+
+  // 6. 管理者停用與防呆測試
+  const toggleDisable = api_toggleUserStatus("B111014", testSalesEmpNo, "DISABLED");
+  assert(toggleDisable.success === true, "管理者成功停用該同仁");
+  const loginDisabled = api_login(testSalesEmpNo, "pass123456");
+  assert(loginDisabled.success === false && loginDisabled.message.includes("停用"), "停用狀態登入被精確阻擋 (PASS)");
+
+  // 防呆：禁止停用初始最高管理員
+  const toggleAdmin = api_toggleUserStatus("B111014", "B111014", "DISABLED");
+  assert(toggleAdmin.success === false, "系統防呆機制成功阻擋停用初始最高管理者 B111014 (PASS)");
+
+  // 恢復同仁啟用
+  api_toggleUserStatus("B111014", testSalesEmpNo, "ACTIVE");
+
+  // 7. 測試 ERP 二維陣列上傳與自動清洗 API (api_uploadAndCleanERP)
+  const mockFileRows = [
+    ["品號", "品名", "規格", "單位", "庫別", "庫別名稱", "庫存數量"], // 表頭
+    ["411HTBX001-RR1001", "HTB-50 樹德50經典3合1小工具/紅", "小工具", "PCS", "640", "門市", 300], // 640 倉有效
+    ["411HTBX001-RR1001", "小計", "", "", "640", "門市", 300], // 小計 (應過濾)
+    ["310FBXX001B000071", "2-FB-4531折疊籃-框/2955U海軍藍", "框", "PCS", "101", "大倉", 500], // 101 大倉 (非640倉，應過濾)
+    ["310FBXX001B000071", "2-FB-4531折疊籃-框/2955U海軍藍", "框", "PCS", "640", "門市", 120]  // 640 倉有效
+  ];
+  const erpUploadRes = api_uploadAndCleanERP(mockFileRows);
+  assert(erpUploadRes.success === true, "ERP 陣列直傳與自動清洗執行成功");
+  assert(erpUploadRes.totalParsedRows === 4, "正確排除第一列表頭，解析 4 列資料");
+
+  // 檢查 640 倉有效清洗數
+  const cleanCheck = cleanERPDataFromRawSheet();
+  assert(cleanCheck.stockMap["411HTBX001-RR1001"].qty === 300, "有效清洗 640 倉小工具數量為 300 (排除小計)");
+  assert(cleanCheck.stockMap["310FBXX001B000071"].qty === 120, "有效排除 101 倉，僅納入 640 倉框數量 120");
+
+  // 還原為預設 ERP 範例資料，以防影響後續展示
+  importERPRawData(SAMPLE_ERP_RAW_ROWS);
+  generate45DaysProjection();
+
+  // UI 彈窗回報
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const statusIcon = results.passed ? "✅" : "❌";
+    const detailMsg = results.details.map(d => `${d.status === "PASS" ? "✔️" : "✖️"} ${d.item}`).join("\n");
+    ui.alert(
+      `${statusIcon} ${results.testName}`,
+      `測試狀態: ${results.passed ? "全部通過 (SUCCESS)" : "存在失敗項目"}\n\n檢驗細項:\n${detailMsg}`,
+      ui.ButtonSet.OK
+    );
+  } catch (e) {
+    // 忽略非 UI 環境
+  }
+
+  return results;
+}
+
 // 注意：doGet 入口唯一定義在 05_API.js，此處不重複定義以避免函式衝突
+

@@ -6,10 +6,11 @@
 
 ## 一、 系統正式線上入口 (Production Endpoints)
 
-- **Web App 操作介面（業務速查 ＋ 主管看板）**：
+- **Web App 操作介面（工號登入 ＋ 角色分流 ＋ ERP 直傳）**：
   👉 [https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec](https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec)
-  - 部署版本：`@5`（已具備跨裝置、跨瀏覽器匿名免登入存取）
-  - 介面：響應式雙視角（業務預約端 + 主管盤點看板）
+  - 部署版本：`@6`（支援純工號登入、首次強制改密碼、角色分流、SheetJS 檔案直傳）
+  - 預設初始最高管理者：工號 `B111014`，預設密碼 `000000`
+  - 介面：響應式多角色視角（ADMIN 人員管理 + 業務預約端 + 庫存盤點與 ERP 上傳）
 - **Google 試算表（資料庫 SSOT）**：
   👉 [https://docs.google.com/spreadsheets/d/1D_rEF40gUEuGtNHhOpE165p5fhTmtD14vORIPZclrQc/edit](https://docs.google.com/spreadsheets/d/1D_rEF40gUEuGtNHhOpE165p5fhTmtD14vORIPZclrQc/edit)
 - **Google Apps Script 專案後端**：
@@ -55,11 +56,12 @@ npx clasp login
 
 ---
 
-## 三、 核心資料庫 7 大底表結構
+## 三、 核心資料庫 8 大底表結構
 
 | 工作表名稱 | 用途與運作機制 | 關鍵欄位 |
 | :--- | :--- | :--- |
-| **01_ERP原始匯入** | 每日由 ERP 匯出清冊貼上，自動過濾小計、合計列並鎖定 640 倉 | 品號、品名、庫別(640)、數量、匯入時間 |
+| **00_使用者帳號表** | 工號即帳號認證（零 Gmail 留存）、SHA-256 密碼、審核狀態與首次強制改密碼 | 工號、姓名、密碼Hash、角色、狀態、首次改密碼、建立時間、最後登入 |
+| **01_ERP原始匯入** | 每日由 ERP 匯出清冊貼上或前端檔案直傳，自動過濾小計、合計列並鎖定 640 倉 | 品號、品名、規格、庫別(640)、數量、匯入時間 |
 | **02_材料品號對照表** | 系統基準白名單（29 項核心材料），定義花色與材料種類分類代碼 | ERP品號、ERP品名、材料種類代碼、花色規格 |
 | **03_BOM配方設定表** | 6 大體驗商品之原物料組成用量與共用料關係 | 產品代碼、銷售方案、所需材料種類、單份用量 |
 | **04_現場抽盤流水帳** | 門市同仁 3 秒隨手抽盤回報，當日實數優先覆蓋 ERP 帳面 | 記錄時間、品號、實盤數、ERP數、盤差、狀態 |
@@ -71,15 +73,16 @@ npx clasp login
 
 ## 四、 核心後端模組清單 (GAS Codebase)
 
-1. `gas/00_Config.js`：系統全域常數、29 項材料主檔、6 大商品 BOM 規則、平日/假日散客保底參數、安全的 `getSpreadsheet()` 雙軌實例獲取器。
+1. `gas/00_Config.js`：系統全域常數、8 大底表定義、29 項材料主檔、6 大商品 BOM 規則、初始管理者設定 `B111014`。
 2. `gas/00_SampleERP.js`：門市 175 筆真實 ERP 原始匯出範例資料集。
-3. `gas/01_InitDB.js`：試算表 7 大底表樣式排版、主檔自動匯入、`🚀 DIY庫存系統管理` 自訂選單（支援側邊欄、對話框與直接連結）。
-4. `gas/02_ERPCleaner.js`：ERP 原始資料清洗過濾、現場抽盤登記與雙軌庫存融合模組。
+3. `gas/01_InitDB.js`：試算表 8 大底表樣式排版、主檔與初始管理者自動匯入、自訂管理選單。
+4. `gas/02_ERPCleaner.js`：ERP 原始資料清洗過濾、檔案二維陣列直傳自動清洗 (`api_uploadAndCleanERP`)、現場抽盤登記與雙軌庫存融合模組。
 5. `gas/03_BOMCalculator.js`：折疊籃 6 部件款式花色總量池木桶短板運算、繪聲繪影共用料連動扣抵。
 6. `gas/04_ProjectionAndGate.js`：45 天動態推移、15 天交期時間閘門防呆、最晚下單日倒推與採購單生成。
 7. `gas/05_API.js`：Web App 前端唯一 `doGet(e)` 與遠端 API 控制器。
-8. `gas/99_Tests.js`：各階段自動化單元測試套件（Phase 1~4 測試驗收函式）。
-9. `gas/index.html`：雙視角現代化響應式前端介面（支援手機與桌面操作）。
+8. `gas/06_AuthManager.js`：工號認證、SHA-256 密碼雜湊、線上申請、ADMIN 審核、停用/啟用、重設密碼與首次強制修改密碼 API。
+9. `gas/99_Tests.js`：各階段自動化單元測試套件（含 Phase 6 帳號與上傳自動化驗證函式）。
+10. `gas/index.html`：整合 SheetJS 引擎之多角色響應式現代化前端介面。
 
 ---
 

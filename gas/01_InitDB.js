@@ -5,21 +5,23 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("🚀 DIY庫存系統管理")
-    .addItem("1. ⚡ 初始化 7 大底表與主檔", "initDatabase")
-    .addItem("2. 🧪 執行階段一驗證測試", "test_Phase1_DBStructure")
+    .addItem("1. ⚡ 初始化 8 大底表、帳號與主檔", "initDatabase")
+    .addItem("2. 🧪 執行階段一驗證測試 (底表結構)", "test_Phase1_DBStructure")
     .addSeparator()
     .addItem("3. 🧹 匯入原始 ERP 資料並清洗", "menu_importAndCleanERP")
-    .addItem("4. 🧪 執行階段二驗證測試", "test_Phase2_ERPCleaningAndInventory")
+    .addItem("4. 🧪 執行階段二驗證測試 (ERP清洗與雙軌融合)", "test_Phase2_ERPCleaningAndInventory")
     .addSeparator()
     .addItem("5. 📊 即時試算 6 大商品可接單上限與短板", "menu_checkBOMCapacities")
-    .addItem("6. 🧪 執行階段三驗證測試", "test_Phase3_BOMCapacity")
+    .addItem("6. 🧪 執行階段三驗證測試 (BOM短板木桶)", "test_Phase3_BOMCapacity")
     .addSeparator()
     .addItem("7. 📈 刷新 45 天動態推移底表", "menu_refreshProjection")
-    .addItem("8. 🧪 執行階段四驗證測試", "test_Phase4_TimeGateAndProjection")
+    .addItem("8. 🧪 執行階段四驗證測試 (15天時間閘門)", "test_Phase4_TimeGateAndProjection")
     .addSeparator()
-    .addItem("9. 🖥️ 在試算表右側開啟操作面板 (Sidebar)", "menu_openSidebar")
-    .addItem("10. 🪟 在試算表中央開啟全功能視窗 (Dialog)", "menu_openDialog")
-    .addItem("11. 🌐 取得外部 Web App 獨立網址", "menu_openWebApp")
+    .addItem("9. 🧪 執行階段六驗證測試 (帳號權限與ERP直傳)", "test_Phase6_AuthAndERPUpload")
+    .addSeparator()
+    .addItem("10. 🖥️ 在試算表右側開啟操作面板 (Sidebar)", "menu_openSidebar")
+    .addItem("11. 🪟 在試算表中央開啟全功能視窗 (Dialog)", "menu_openDialog")
+    .addItem("12. 🌐 取得外部 Web App 獨立網址", "menu_openWebApp")
     .addToUi();
 }
 
@@ -74,6 +76,13 @@ function initDatabase() {
   const ss = getSpreadsheet();
   const sheetsConfig = [
     {
+      name: CONFIG.SHEETS.USER_ACCOUNTS,
+      headers: [
+        "工號", "姓名", "密碼Hash", "角色", "狀態", "首次登入需改密碼", "建立時間", "最後登入時間"
+      ],
+      headerColor: "#312E81" // 靛紫
+    },
+    {
       name: CONFIG.SHEETS.ERP_RAW,
       headers: [
         "品號", "品名", "規格", "單位", "庫別", "庫別名稱", 
@@ -126,7 +135,7 @@ function initDatabase() {
     }
   ];
 
-  // 1. 確保 7 張底表存在並設定表頭
+  // 1. 確保 8 張底表存在並設定表頭
   sheetsConfig.forEach(cfg => {
     let sheet = ss.getSheetByName(cfg.name);
     if (!sheet) {
@@ -149,6 +158,27 @@ function initDatabase() {
     sheet.setRowHeight(1, 36);
     sheet.setFrozenRows(1);
   });
+
+  // 1.5. 初始化最高管理者帳號 (B111014)
+  const userSheet = ss.getSheetByName(CONFIG.SHEETS.USER_ACCOUNTS);
+  if (userSheet.getLastRow() <= 1) {
+    const adminInit = CONFIG.INITIAL_ADMIN;
+    const adminHash = typeof hashPassword_ === "function" 
+      ? hashPassword_(adminInit.defaultPassword)
+      : "e6c279042e2644f4d352514f466538560219c561ac00152fa9f100c3029a27ec"; // 000000 之 SHA-256
+    const nowStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
+    userSheet.appendRow([
+      adminInit.empNo,
+      adminInit.name,
+      adminHash,
+      adminInit.role,
+      CONFIG.USER_STATUS.ACTIVE,
+      true, // 首次登入強制修改密碼
+      nowStr,
+      ""
+    ]);
+    userSheet.autoResizeColumns(1, 8);
+  }
 
   // 2. 匯入 28 項核心物料主檔至 [02_材料品號對照表]
   const matSheet = ss.getSheetByName(CONFIG.SHEETS.MATERIAL_MASTER);
@@ -181,7 +211,7 @@ function initDatabase() {
     bomSheet.autoResizeColumns(1, 5);
   }
 
-  // 4. 清理預設空白工作表 (若存在且非 7 大底表)
+  // 4. 清理預設空白工作表 (若存在且非 8 大底表)
   const defaultSheet = ss.getSheetByName("工作表1") || ss.getSheetByName("Sheet1");
   if (defaultSheet && ss.getSheets().length > 1) {
     try {
@@ -193,7 +223,7 @@ function initDatabase() {
 
   return {
     success: true,
-    message: "Google Sheets 7 大底表與主檔資料初始化完成！",
+    message: "Google Sheets 8 大底表、初始管理者與主檔資料初始化完成！",
     spreadsheetUrl: ss.getUrl()
   };
 }
