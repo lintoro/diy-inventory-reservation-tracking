@@ -203,6 +203,12 @@ function api_getProjectionByDate(targetDateStr) {
       });
     }
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const targetMid = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
+    const daysDiff = Math.ceil((targetMid.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const isOver45Days = (daysDiff > 45);
+
     Object.keys(capacities).forEach(id => {
       const p = capacities[id];
       const booked = bookingsOnDate[p.productName] || 0;
@@ -212,7 +218,9 @@ function api_getProjectionByDate(targetDateStr) {
         grossCapacity: p.maxCapacity,
         safetyFloor: floor,
         bookedQty: booked,
-        netQty: netQty
+        netQty: netQty,
+        isOver45Days: isOver45Days,
+        displayStatus: isOver45Days ? "皆可預訂" : `${netQty} 套`
       };
     });
 
@@ -221,6 +229,8 @@ function api_getProjectionByDate(targetDateStr) {
       date: normalizedDateStr,
       dateType: dateType,
       safetyFloor: floor,
+      daysDiff: daysDiff,
+      isOver45Days: isOver45Days,
       capacities: dayCaps
     };
   } catch (err) {

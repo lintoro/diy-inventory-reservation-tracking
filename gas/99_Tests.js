@@ -626,6 +626,81 @@ function test_Phase9_BatchProcurementAndDynamicBOM() {
   return results;
 }
 
+/**
+ * 階段十一單元測試：活動日連動推移組數、超過45天皆可預訂與三軌庫存透視驗證
+ */
+function test_Phase11_DateProjectionAndTriTrackInventory() {
+  const results = {
+    testName: "階段十一測試：活動日推移連動、>45天皆可預訂與三軌庫存透視驗證",
+    timestamp: new Date().toISOString(),
+    passed: true,
+    details: []
+  };
+
+  function assert(condition, message) {
+    if (!condition) {
+      results.passed = false;
+      results.details.push({ status: "FAIL", item: message });
+      console.error("❌ 測試失敗: " + message);
+    } else {
+      results.details.push({ status: "PASS", item: message });
+      console.log("✅ 測試通過: " + message);
+    }
+  }
+
+  // 1. 驗證 calculateProductCapacities 输出包含 erpQty 與盤點採信資訊
+  const caps = calculateProductCapacities();
+  const prod1 = caps["1"];
+  assert(prod1 !== undefined, "手能生巧 (ID=1) 成功取得計算結果 (PASS)");
+  assert(prod1 && Array.isArray(prod1.partsDetail) && prod1.partsDetail.length > 0, "手能生巧包含 partsDetail 部件明細 (PASS)");
+  
+  const part1 = prod1.partsDetail[0];
+  assert(part1.erpQty !== undefined && !isNaN(Number(part1.erpQty)), "部件明細精確包含 ERP 640倉系統帳面數字 erpQty (PASS)");
+  assert(part1.poolTotal !== undefined && part1.poolTotal >= 0, "部件明細包含生效在庫 poolTotal (PASS)");
+  assert(typeof part1.source === "string", "部件明細包含採信來源標籤 source (PASS)");
+
+  // 2. 驗證雙軌庫存融合中實盤優先原則
+  const effStock = getEffectiveInventory();
+  assert(Array.isArray(effStock) && effStock.length > 0, "getEffectiveInventory 成功回傳雙軌庫存陣列 (PASS)");
+  const sampleMat = effStock[0];
+  assert(sampleMat.erpQty !== undefined, "庫存物件包含 erpQty 系統帳面數 (PASS)");
+  assert(sampleMat.effectiveQty !== undefined, "庫存物件包含 effectiveQty 計算生效數 (PASS)");
+
+  // 3. 驗證超過 45 天日期推移 API (api_getProjectionByDate)
+  const now = new Date();
+  const future60 = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+  const future60Str = Utilities.formatDate(future60, "Asia/Taipei", "yyyy/MM/dd");
+  
+  const projRes = api_getProjectionByDate(future60Str);
+  assert(projRes.success === true, "api_getProjectionByDate 查詢60天後日期成功 (PASS)");
+  assert(projRes.isOver45Days === true, "正確判定距今 > 45 天，isOver45Days 為 true (PASS)");
+  assert(projRes.daysDiff >= 59 && projRes.daysDiff <= 61, `正確計算距今天數為 ${projRes.daysDiff} 天 (PASS)`);
+  
+  const sampleDayCap = projRes.capacities["1"];
+  assert(sampleDayCap && sampleDayCap.displayStatus === "皆可預訂", "超過 45 天之方案組數狀態標記為【皆可預訂】(PASS)");
+
+  // 4. 驗證 45 天以上預約防呆即時試算 (checkBookingEligibility)
+  const eligRes = checkBookingEligibility(future60Str, "1", 50);
+  assert(eligRes.success === true, "checkBookingEligibility 試算60天後預約成功 (PASS)");
+  assert(eligRes.light === "GREEN", "超過 45 天預約燈號強制為綠燈 (PASS)");
+  assert(eligRes.canBook === true, "超過 45 天預約允許正常送單 (PASS)");
+  assert(eligRes.statusText.includes("皆可預訂"), "狀態說明精確提示【交期充裕，皆可預訂】(PASS)");
+
+  // UI 彈窗回報
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const statusIcon = results.passed ? "✅" : "❌";
+    const detailMsg = results.details.map(d => `${d.status === "PASS" ? "✔️" : "✖️"} ${d.item}`).join("\n");
+    ui.alert(
+      `${statusIcon} ${results.testName}`,
+      `測試狀態: ${results.passed ? "全部通過 (SUCCESS)" : "存在失敗項目"}\n\n檢驗細項:\n${detailMsg}`,
+      ui.ButtonSet.OK
+    );
+  } catch (e) {}
+
+  return results;
+}
+
 // 注意：doGet 入口唯一定義在 05_API.js，此處不重複定義以避免函式衝突
 
 

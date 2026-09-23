@@ -170,19 +170,25 @@ function getEffectiveInventory() {
     });
   }
 
-  // 3. 雙軌融合：對齊 CONFIG.MASTER_MATERIALS (29 項物料)
-  const effectiveList = CONFIG.MASTER_MATERIALS.map(mat => {
+  // 3. 雙軌融合：對齊材料主檔 (支援動態新材料與預設物料)
+  const masterMaterials = (typeof getDynamicMasterMaterials === "function") 
+    ? getDynamicMasterMaterials() 
+    : CONFIG.MASTER_MATERIALS;
+
+  const effectiveList = masterMaterials.map(mat => {
     const erpItem = erpMap[mat.itemCode];
     const erpQty = erpItem ? Number(erpItem.qty) : 0;
     const countItem = todayCycleCountMap[mat.itemCode];
 
     let effectiveQty = erpQty;
-    let source = "ERP帳面兜底";
+    let source = "未更動 (ERP帳面兜底)";
     let diff = 0;
     let hasCountToday = false;
+    let cycleCountQty = null;
 
     if (countItem) {
       effectiveQty = countItem.actualQty;
+      cycleCountQty = countItem.actualQty;
       source = "現場實盤優先";
       diff = countItem.diff;
       hasCountToday = true;
@@ -195,6 +201,7 @@ function getEffectiveInventory() {
       color: mat.color,
       effectiveQty: Math.max(0, effectiveQty), // 庫存非負防呆
       erpQty: erpQty,
+      cycleCountQty: cycleCountQty,
       hasCountToday: hasCountToday,
       diff: diff,
       source: source

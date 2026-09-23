@@ -100,8 +100,16 @@ function checkBookingEligibility(eventDate, productId, bookingQty) {
   let shortageQty = 0;
   let latestOrderDateStr = "";
 
-  // 15 天交期時間閘門判定
-  if (daysDiff < CONFIG.LEAD_TIME_DAYS) {
+  // 15 天交期時間閘門與 45 天長期預約判定
+  const isOver45Days = (daysDiff > 45);
+
+  if (isOver45Days) {
+    // 【情境 C：距今 > 45 天，交期充裕皆可預訂】
+    light = "GREEN";
+    canBook = true;
+    procurementNeeded = false;
+    statusText = `【交期充裕，皆可預訂】活動日距今 ${daysDiff} 天 (>45天)，備料期極為充足，排單無限制，可直接接單預約！`;
+  } else if (daysDiff < CONFIG.LEAD_TIME_DAYS) {
     // 【情境 B：距今 < 15 天，不可補貨凍結期】
     if (requestedQty > maxAvailableForBooking) {
       light = "RED";
@@ -112,7 +120,7 @@ function checkBookingEligibility(eventDate, productId, bookingQty) {
       statusText = `【綠燈正常】活動日距今 ${daysDiff} 天，目前可用量 ${maxAvailableForBooking} 套充足，可直接接單。`;
     }
   } else {
-    // 【情境 A：距今 >= 15 天，可補貨彈性期】
+    // 【情境 A：距今 15~45 天，可補貨彈性期】
     if (requestedQty > maxAvailableForBooking) {
       light = "YELLOW";
       canBook = true; // 允許彈性超額接單

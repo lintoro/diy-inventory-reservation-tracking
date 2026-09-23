@@ -676,7 +676,7 @@
               </div>
               <div class="form-group">
                 <label class="form-label">預計活動日期</label>
-                <input type="date" id="bk-date" class="form-input" onchange="runLiveEligibilityCheck()">
+                <input type="date" id="bk-date" class="form-input" onchange="handleBookingDateChanged()">
               </div>
               <div class="form-group">
                 <label class="form-label">體驗方案商品</label>
@@ -744,7 +744,10 @@
             <!-- 組數看板 ＋ 活動抽屜 -->
             <div class="card">
               <div class="card-title">
-                <span class="card-title-text">📊 6 大體驗方案可做組數與用料抽屜</span>
+                <div>
+                  <span id="booking-capacities-title" class="card-title-text">📊 體驗方案可用組數與用料抽屜</span>
+                  <span id="booking-date-badge" style="font-size: 12px; font-weight: 600; color: var(--primary); margin-left: 8px;"></span>
+                </div>
                 <button class="btn btn-outline btn-sm" onclick="loadDashboard()">🔄 刷新</button>
               </div>
               <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
@@ -813,10 +816,10 @@
           </div>
         </div>
 
-        <!-- 6 大方案組數看板與活動用料抽屜 (庫存端同步視角) -->
+        <!-- 各體驗方案組數狀況與活動用料抽屜 (庫存端同步視角) -->
         <div class="card">
           <div class="card-title">
-            <span class="card-title-text">📦 目前 6 大體驗方案組數狀況與專屬材料抽屜</span>
+            <span class="card-title-text">📦 各體驗方案組數狀況與專屬材料抽屜</span>
             <button class="btn btn-outline btn-sm" onclick="loadDashboard()">🔄 刷新庫存</button>
           </div>
           <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
@@ -1428,8 +1431,8 @@
             document.getElementById("sf-weekend").value = res.safetyFloorConfig.weekend || 20;
           }
 
-          // 7. 觸發即時試算
-          runLiveEligibilityCheck();
+          // 7. 觸發即時試算與活動日方案可用組數更新
+          handleBookingDateChanged();
         })
         .withFailureHandler(function(err) {
           console.error("api_getDashboardOverview 失敗: " + err);
@@ -1437,8 +1440,53 @@
         .api_getDashboardOverview();
     }
 
-    // 核心：渲染活動項目卡片與用料抽屜
-    function renderCapacitiesDrawers(containerId, capsList, sfConfig) {
+    // 業務端預計活動日變動連動處理
+    function handleBookingDateChanged() {
+      const dateInput = document.getElementById("bk-date");
+      if (!dateInput) return;
+      const dateVal = dateInput.value;
+      if (!dateVal) return;
+
+      // 1. 執行左側即時預約防呆判定
+      runLiveEligibilityCheck();
+
+      // 2. 更新右側體驗方案可用組數
+      updateBookingCapacitiesByDate(dateVal);
+    }
+
+    function updateBookingCapacitiesByDate(dateVal) {
+      if (!dateVal || !cachedDashboardData) return;
+
+      const titleBadge = document.getElementById("booking-date-badge");
+      if (titleBadge) {
+        titleBadge.innerText = `【${dateVal} 試算視角】`;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            console.error("更新活動日方案組數異常: " + res.message);
+            return;
+          }
+
+          let capsArray = [];
+          if (Array.isArray(cachedDashboardData.capacitiesList)) {
+            capsArray = cachedDashboardData.capacitiesList;
+          } else if (cachedDashboardData.capacities && typeof cachedDashboardData.capacities === "object") {
+            capsArray = Object.keys(cachedDashboardData.capacities).map(k => cachedDashboardData.capacities[k]);
+          }
+
+          // 重新繪製業務端右側方案卡片 (依據活動日與是否>45天顯示)
+          renderCapacitiesDrawers("prod-capacities-list-booking", capsArray, cachedDashboardData.safetyFloorConfig, res);
+        })
+        .withFailureHandler(function(err) {
+          console.error("api_getProjectionByDate 失敗: " + err);
+        })
+        .api_getProjectionByDate(dateVal);
+    }
+
+    // 核心：渲染活動項目卡片與用料抽屜 (支援活動日連動、>45天皆可預訂、三軌庫存透視)
+    function renderCapacitiesDrawers(containerId, capsList, sfConfig, dateContext) {
       const container = document.getElementById(containerId);
       if (!container) return;
 
@@ -1449,6 +1497,7 @@
 
       const wkFloor = sfConfig ? sfConfig.weekday : 10;
       const weFloor = sfConfig ? sfConfig.weekend : 20;
+      const isBookingView = (containerId === "prod-capacities-list-booking");
 
       container.innerHTML = capsList.map((p, idx) => {
         const total = p.maxCapacity || 0;
@@ -1456,16 +1505,48 @@
         const netWe = Math.max(0, total - weFloor);
         const drawerId = `${containerId}-drawer-${p.productId}`;
 
+        // 依據是否為業務端與日期脈絡決定組數呈現
+        let displayNumHtml = "";
+        let metaDescHtml = "";
+
+        if (isBookingView && dateContext) {
+          if (dateContext.isOver45Days) {
+            displayNumHtml = `<div class="capacity-num" style="color:#059669; font-size:22px; font-weight:700;">皆可預訂</div>`;
+            metaDescHtml = `📅 預約活動日：<b>${dateContext.date}</b> (距今 ${dateContext.daysDiff} 天 >45天) ➔ <span style="color:#059669; font-weight:600;">備料交期充足，排單無限制</span>`;
+          } else {
+            const dateCap = (dateContext.capacities && dateContext.capacities[p.productId]) ? dateContext.capacities[p.productId] : null;
+            const targetNet = (dateCap && dateCap.netQty !== undefined) ? dateCap.netQty : Math.max(0, total - (dateContext.dateType === "假日" ? weFloor : wkFloor));
+            displayNumHtml = `<div class="capacity-num">${targetNet} <span style="font-size:13px; font-weight:500; color:#64748b;">套</span></div>`;
+            metaDescHtml = `📅 預約活動日：<b>${dateContext.date}</b> (${dateContext.dateType}) ｜ 保留現場散客 ${dateContext.safetyFloor} 份 ➔ 當日預計可用：<b style="color:var(--primary);">${targetNet}</b> 套`;
+          }
+        } else {
+          // 庫管端或預設靜態在庫視角
+          displayNumHtml = `<div class="capacity-num">${total} <span style="font-size:13px; font-weight:500; color:#64748b;">套</span></div>`;
+          metaDescHtml = `🔒 現場散客保底 (平日${wkFloor} / 假日${weFloor}) ➔ 業務可接約：平日 <b>${netWk}</b> 套 / 假日 <b>${netWe}</b> 套`;
+        }
+
         const parts = p.partsDetail || [];
-        const partsRows = parts.map(pt => `
-          <tr class="${pt.isBottleneck ? 'highlight-row' : ''}">
-            <td><strong>${pt.name}</strong> ${pt.isBottleneck ? '<span style="color:#ef4444; font-size:11px; font-weight:700;">[短板限制]</span>' : ''}</td>
-            <td style="text-align:center;">${pt.requiredPerUnit}</td>
-            <td style="text-align:center; font-weight:600;">${pt.poolTotal}</td>
-            <td style="text-align:center; font-weight:700; color:${pt.isBottleneck ? '#ef4444' : 'var(--primary)'};">${pt.possibleUnits} 套</td>
-            <td><span class="${pt.statusClass}">${pt.suggestedAction}</span></td>
-          </tr>
-        `).join("");
+        const partsRows = parts.map(pt => {
+          const erpVal = (pt.erpQty !== undefined && pt.erpQty !== null) ? pt.erpQty : pt.poolTotal;
+          const cycleHtml = pt.hasCycleCount
+            ? `<strong style="color:#059669;">${pt.cycleCountQty}</strong> <span style="font-size:10px; background:#dcfce7; color:#166534; padding:1px 5px; border-radius:3px; font-weight:600;">[實盤採信]</span>`
+            : `<span style="color:#94a3b8; font-size:12px;">未更動 (帶入系統)</span>`;
+          const effSourceBadge = pt.hasCycleCount
+            ? `<span style="font-size:10px; color:#059669; font-weight:600;">(實盤優先)</span>`
+            : `<span style="font-size:10px; color:#64748b;">(系統兜底)</span>`;
+
+          return `
+            <tr class="${pt.isBottleneck ? 'highlight-row' : ''}">
+              <td><strong>${pt.name}</strong> ${pt.isBottleneck ? '<span style="color:#ef4444; font-size:11px; font-weight:700;">[短板限制]</span>' : ''}</td>
+              <td style="text-align:center;">${pt.requiredPerUnit}</td>
+              <td style="text-align:center; color:#475569;">${erpVal}</td>
+              <td style="text-align:center;">${cycleHtml}</td>
+              <td style="text-align:center; font-weight:700; color:#0f172a;">${pt.poolTotal} ${effSourceBadge}</td>
+              <td style="text-align:center; font-weight:700; color:${pt.isBottleneck ? '#ef4444' : 'var(--primary)'};">${pt.possibleUnits} 套</td>
+              <td><span class="${pt.statusClass}">${pt.suggestedAction}</span></td>
+            </tr>
+          `;
+        }).join("");
 
         return `
           <div class="capacity-card">
@@ -1478,11 +1559,11 @@
                   短板材料：<span style="color:#b91c1c; font-weight:600;">${p.bottleneckCategory}</span>
                 </div>
                 <div style="font-size:11px; color:#64748b; margin-top:3px;">
-                  🔒 現場散客保底 (平日${wkFloor} / 假日${weFloor}) ➔ 業務可接約：平日 <b>${netWk}</b> 套 / 假日 <b>${netWe}</b> 套
+                  ${metaDescHtml}
                 </div>
               </div>
               <div class="capacity-stats">
-                <div class="capacity-num">${total} <span style="font-size:13px; font-weight:500; color:#64748b;">套</span></div>
+                ${displayNumHtml}
                 <div style="font-size:12px; color:var(--primary); font-weight:600; margin-top:2px;">
                   點此展開專屬用料抽屜 ▾
                 </div>
@@ -1491,8 +1572,13 @@
 
             <!-- 抽屜展開區域 -->
             <div id="${drawerId}" class="drawer-content">
-              <div style="font-size:13px; font-weight:700; color:#334155; margin-bottom:6px;">
-                📋 【${p.productName}】專屬原物料庫存與短板透視：
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <div style="font-size:13px; font-weight:700; color:#334155;">
+                  📋 【${p.productName}】專屬原物料庫存與短板透視：
+                </div>
+                <div style="font-size:11px; color:#059669; font-weight:600;">
+                  ✔ 雙軌機制：優先採信現場盤點實數
+                </div>
               </div>
               <div class="table-container">
                 <table>
@@ -1500,7 +1586,9 @@
                     <tr>
                       <th>原物料名稱 / 規格花色</th>
                       <th style="text-align:center;">單份需用</th>
-                      <th style="text-align:center;">當前在庫數</th>
+                      <th style="text-align:center;">系統數字 (ERP 640倉)</th>
+                      <th style="text-align:center;">現場盤點實數</th>
+                      <th style="text-align:center;">計算生效在庫</th>
                       <th style="text-align:center;">換算可做</th>
                       <th>最晚下單提醒 / 採購狀態</th>
                     </tr>
@@ -1509,6 +1597,9 @@
                     ${partsRows}
                   </tbody>
                 </table>
+              </div>
+              <div style="font-size:11px; color:#64748b; margin-top:6px; background:#f8fafc; padding:6px 10px; border-radius:4px; border:1px solid #e2e8f0;">
+                💡 <b>雙軌庫存說明</b>：若現場盤點沒有更動，則直接帶入系統數字；在計算組數時，<b>優先以現場盤點數字為主</b>。
               </div>
             </div>
           </div>

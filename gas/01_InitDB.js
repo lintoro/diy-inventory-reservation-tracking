@@ -20,10 +20,11 @@ function onOpen() {
     .addItem("9. 🧪 執行階段六驗證測試 (帳號權限與ERP直傳)", "test_Phase6_AuthAndERPUpload")
     .addItem("10. 🧪 執行階段七驗證測試 (活動抽屜與動態保底)", "test_Phase7_DrawerAndSafetyFloor")
     .addItem("11. 🧪 執行階段九驗證測試 (批量採購與動態BOM)", "test_Phase9_BatchProcurementAndDynamicBOM")
+    .addItem("12. 🧪 執行階段十一驗證測試 (活動日推移與三軌庫存)", "test_Phase11_DateProjectionAndTriTrackInventory")
     .addSeparator()
-    .addItem("12. 🖥️ 在試算表右側開啟操作面板 (Sidebar)", "menu_openSidebar")
-    .addItem("13. 🪟 在試算表中央開啟全功能視窗 (Dialog)", "menu_openDialog")
-    .addItem("14. 🌐 取得外部 Web App 獨立網址", "menu_openWebApp")
+    .addItem("13. 🖥️ 在試算表右側開啟操作面板 (Sidebar)", "menu_openSidebar")
+    .addItem("14. 🪟 在試算表中央開啟全功能視窗 (Dialog)", "menu_openDialog")
+    .addItem("15. 🌐 取得外部 Web App 獨立網址", "menu_openWebApp")
     .addToUi();
 }
 

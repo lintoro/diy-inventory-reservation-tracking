@@ -6,9 +6,9 @@
 
 ## 一、 系統正式線上入口 (Production Endpoints)
 
-- **Web App 操作介面（工號登入 ＋ 活動抽屜 ＋ 採購核銷與單據直傳 ＋ 商品BOM維護中心 ＋ 原物料主檔管理 ＋ ERP 直傳）**：
+- **Web App 操作介面（工號登入 ＋ 活動抽屜 ＋ 採購核銷與單據直傳 ＋ 商品BOM維護中心 ＋ 原物料主檔管理 ＋ 三軌庫存透視 ＋ ERP 直傳）**：
   👉 [https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec](https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec)
-  - 部署版本：`@10`（建立原物料品號貨號與品名主檔並動態拉入BOM表、登入畫面記住公司工號(ID)與去除提示字樣、進貨單據批量拖曳解析上傳、採購單 CSV 範本下載、多選批次到貨核銷、動態商品與 BOM 配方維護中心）
+  - 部署版本：`@11`（活動日連動右側方案可用組數、距今>45天自動標記皆可預訂、徹底去除「6 大」寫死字樣、升級 7 欄式三軌庫存透視：ERP系統帳面數 ＋ 現場抽盤實數 ＋ 計算生效在庫、實盤優先融合計算）
   - 預設初始最高管理者：工號 `B111014`，密碼已在系統中啟用
   - 介面：響應式多角色視角（ADMIN 人員管理 + 業務預約端 + 庫存盤點與 ERP 上傳 + 🎨 商品與 BOM 維護中心 + 🔩 原物料品號管理）
 - **Google 試算表（資料庫 SSOT）**：

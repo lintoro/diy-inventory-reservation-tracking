@@ -28,12 +28,39 @@ function calculateProductCapacities(inventoryList) {
     return items.reduce((sum, it) => sum + (Number(it.effectiveQty) || 0), 0);
   }
 
+  // 輔助函式：取得某材料種類的完整庫存統計 (生效在庫、ERP帳面數、現場盤點數)
+  function getCategoryStats(category) {
+    const items = catMap[category] || [];
+    let effectiveSum = 0;
+    let erpSum = 0;
+    let cycleCountSum = 0;
+    let hasCount = false;
+
+    items.forEach(it => {
+      effectiveSum += (Number(it.effectiveQty) || 0);
+      erpSum += (Number(it.erpQty) || 0);
+      if (it.hasCountToday) {
+        hasCount = true;
+        cycleCountSum += (Number(it.cycleCountQty !== undefined && it.cycleCountQty !== null ? it.cycleCountQty : it.effectiveQty) || 0);
+      }
+    });
+
+    return {
+      category: category,
+      effectiveTotal: effectiveSum,
+      erpTotal: erpSum,
+      hasCycleCount: hasCount,
+      cycleCountTotal: hasCount ? cycleCountSum : null,
+      source: hasCount ? "現場實盤優先" : "未更動 (沿用系統)"
+    };
+  }
+
   // 輔助產生下單提醒文字
   const today = new Date();
   const deadlineDate = new Date(today.getTime() + (CONFIG.LEAD_TIME_DAYS * 24 * 60 * 60 * 1000));
   const deadlineStr = Utilities.formatDate(deadlineDate, "Asia/Taipei", "yyyy/MM/dd");
 
-  function buildPartInfo(name, req, pool, poss, isBtl) {
+  function buildPartInfo(name, req, statsOrPool, poss, isBtl) {
     let action = "🟢 庫存充足";
     let statusClass = "text-green";
     if (poss <= 20) {
@@ -51,10 +78,22 @@ function calculateProductCapacities(inventoryList) {
       action = "🟢 庫存充足";
       statusClass = "text-green";
     }
+
+    const isObj = (typeof statsOrPool === "object" && statsOrPool !== null);
+    const pool = isObj ? statsOrPool.effectiveTotal : statsOrPool;
+    const erpQty = isObj ? statsOrPool.erpTotal : pool;
+    const hasCount = isObj ? !!statsOrPool.hasCycleCount : false;
+    const cycleCountQty = (isObj && hasCount) ? statsOrPool.cycleCountTotal : null;
+    const source = isObj ? statsOrPool.source : "系統數字";
+
     return {
       name: name,
       requiredPerUnit: req,
       poolTotal: pool,
+      erpQty: erpQty,
+      hasCycleCount: hasCount,
+      cycleCountQty: cycleCountQty,
+      source: source,
       possibleUnits: poss,
       isBottleneck: isBtl,
       suggestedAction: action,
@@ -73,7 +112,7 @@ function calculateProductCapacities(inventoryList) {
     bottleneckCategory: "手能生巧 (HTB-50)",
     bottleneckLimit: toolQty,
     partsDetail: [
-      buildPartInfo("HTB-50 小工具/紅", 1, toolQty, toolQty, true)
+      buildPartInfo("HTB-50 小工具/紅", 1, getCategoryStats("手能生巧"), toolQty, true)
     ]
   };
 
@@ -96,9 +135,9 @@ function calculateProductCapacities(inventoryList) {
     bottleneckCategory: fatBoxBottleneck,
     bottleneckLimit: fatBoxMax,
     partsDetail: [
-      buildPartInfo("OF-A03L 胖胖盒專用箱", 1, fatBoxQty, fatBoxQty, fatBoxQty === fatBoxMax),
-      buildPartInfo("著色框圖A7 (三款共用)", 1, frameQty, frameQty, frameQty === fatBoxMax),
-      buildPartInfo("創意貼顏料四色 (三款共用)", 1, paintQty, paintQty, paintQty === fatBoxMax)
+      buildPartInfo("OF-A03L 胖胖盒專用箱", 1, getCategoryStats("繪聲繪影C_胖胖盒"), fatBoxQty, fatBoxQty === fatBoxMax),
+      buildPartInfo("著色框圖A7 (三款共用)", 1, getCategoryStats("繪聲繪影A"), frameQty, frameQty === fatBoxMax),
+      buildPartInfo("創意貼顏料四色 (三款共用)", 1, getCategoryStats("繪聲繪影B"), paintQty, paintQty === fatBoxMax)
     ]
   };
 
@@ -116,9 +155,9 @@ function calculateProductCapacities(inventoryList) {
     bottleneckCategory: tb200Bottleneck,
     bottleneckLimit: tb200Max,
     partsDetail: [
-      buildPartInfo("TB-200 工具箱專用箱", 1, tb200Qty, tb200Qty, tb200Qty === tb200Max),
-      buildPartInfo("著色框圖A7 (三款共用)", 1, frameQty, frameQty, frameQty === tb200Max),
-      buildPartInfo("創意貼顏料四色 (三款共用)", 1, paintQty, paintQty, paintQty === tb200Max)
+      buildPartInfo("TB-200 工具箱專用箱", 1, getCategoryStats("繪聲繪影C_TB200"), tb200Qty, tb200Qty === tb200Max),
+      buildPartInfo("著色框圖A7 (三款共用)", 1, getCategoryStats("繪聲繪影A"), frameQty, frameQty === tb200Max),
+      buildPartInfo("創意貼顏料四色 (三款共用)", 1, getCategoryStats("繪聲繪影B"), paintQty, paintQty === tb200Max)
     ]
   };
 
@@ -136,9 +175,9 @@ function calculateProductCapacities(inventoryList) {
     bottleneckCategory: tb9Bottleneck,
     bottleneckLimit: tb9Max,
     partsDetail: [
-      buildPartInfo("TB-9 隨手工具箱專用箱", 1, tb9Qty, tb9Qty, tb9Qty === tb9Max),
-      buildPartInfo("著色框圖A7 (三款共用)", 1, frameQty, frameQty, frameQty === tb9Max),
-      buildPartInfo("創意貼顏料四色 (三款共用)", 1, paintQty, paintQty, paintQty === tb9Max)
+      buildPartInfo("TB-9 隨手工具箱專用箱", 1, getCategoryStats("繪聲繪影C_TB9"), tb9Qty, tb9Qty === tb9Max),
+      buildPartInfo("著色框圖A7 (三款共用)", 1, getCategoryStats("繪聲繪影A"), frameQty, frameQty === tb9Max),
+      buildPartInfo("創意貼顏料四色 (三款共用)", 1, getCategoryStats("繪聲繪影B"), paintQty, paintQty === tb9Max)
     ]
   };
 
@@ -164,10 +203,10 @@ function calculateProductCapacities(inventoryList) {
   });
 
   const basketDetails = basketParts.map(part => {
-    const totalQty = getCategoryTotalQty(part.category);
-    const possibleUnits = Math.floor(totalQty / part.ratio);
+    const stats = getCategoryStats(part.category);
+    const possibleUnits = Math.floor(stats.effectiveTotal / part.ratio);
     const isBtl = (possibleUnits === basketMinUnits);
-    return buildPartInfo(part.name, part.ratio, totalQty, possibleUnits, isBtl);
+    return buildPartInfo(part.name, part.ratio, stats, possibleUnits, isBtl);
   });
 
   results["5"] = {
@@ -188,7 +227,7 @@ function calculateProductCapacities(inventoryList) {
     bottleneckCategory: "CTB-3215L 潘朵拉盒 (紙膠帶待建檔暫以盒為限)",
     bottleneckLimit: pandoraBoxQty,
     partsDetail: [
-      buildPartInfo("CTB-3215L 潘朵拉盒 (黑/白2色)", 1, pandoraBoxQty, pandoraBoxQty, true)
+      buildPartInfo("CTB-3215L 潘朵拉盒 (黑/白2色)", 1, getCategoryStats("請多紙膠A"), pandoraBoxQty, pandoraBoxQty, true)
     ]
   };
 
@@ -230,7 +269,8 @@ function calculateProductCapacities(inventoryList) {
       let minUnits = Infinity;
       let btlName = "";
       const rawDetails = rules.map(rule => {
-        const catQty = getCategoryTotalQty(rule.category);
+        const stats = getCategoryStats(rule.category);
+        const catQty = stats.effectiveTotal;
         const ratio = Number(rule.qty) || 1;
         const possible = Math.floor(catQty / ratio);
         if (possible < minUnits) {
@@ -240,6 +280,7 @@ function calculateProductCapacities(inventoryList) {
         return {
           name: rule.note ? `${rule.note} (${rule.category})` : rule.category,
           requiredPerUnit: ratio,
+          stats: stats,
           poolTotal: catQty,
           possibleUnits: possible,
           category: rule.category
@@ -249,7 +290,7 @@ function calculateProductCapacities(inventoryList) {
       const safeMin = minUnits === Infinity ? 0 : minUnits;
       const partsWithStatus = rawDetails.map(d => {
         const isBtl = (d.possibleUnits === safeMin);
-        return buildPartInfo(d.name, d.requiredPerUnit, d.poolTotal, d.possibleUnits, isBtl);
+        return buildPartInfo(d.name, d.requiredPerUnit, d.stats, d.possibleUnits, isBtl);
       });
 
       results[pId] = {
