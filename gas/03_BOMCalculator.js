@@ -192,6 +192,79 @@ function calculateProductCapacities(inventoryList) {
     ]
   };
 
+  // 5. 動態自訂商品 (由 03_BOM配方設定表 底表擴充新增之商品)
+  try {
+    const dynConfig = getDynamicProductsAndBOM();
+    const allProducts = dynConfig.products || [];
+    const allRules = dynConfig.bomRules || [];
+
+    const prodBomMap = {};
+    allRules.forEach(r => {
+      if (!prodBomMap[r.productId]) prodBomMap[r.productId] = [];
+      prodBomMap[r.productId].push(r);
+    });
+
+    allProducts.forEach(prod => {
+      const pId = String(prod.id);
+      // 若為預設 1~6 號已計算，僅在其名稱或配方有微調時補充資訊；若為新自訂商品則執行完整動態短板
+      if (["1", "2", "3", "4", "5", "6"].includes(pId)) {
+        if (results[pId]) {
+          results[pId].productName = prod.name; // 支援動態更名
+        }
+        return;
+      }
+
+      const rules = prodBomMap[pId] || [];
+      if (rules.length === 0) {
+        results[pId] = {
+          productId: pId,
+          productName: prod.name,
+          maxCapacity: 0,
+          bottleneckCategory: "尚未設定材料配方",
+          bottleneckLimit: 0,
+          partsDetail: []
+        };
+        return;
+      }
+
+      let minUnits = Infinity;
+      let btlName = "";
+      const rawDetails = rules.map(rule => {
+        const catQty = getCategoryTotalQty(rule.category);
+        const ratio = Number(rule.qty) || 1;
+        const possible = Math.floor(catQty / ratio);
+        if (possible < minUnits) {
+          minUnits = possible;
+          btlName = `${rule.note || rule.category} (短板限制)`;
+        }
+        return {
+          name: rule.note ? `${rule.note} (${rule.category})` : rule.category,
+          requiredPerUnit: ratio,
+          poolTotal: catQty,
+          possibleUnits: possible,
+          category: rule.category
+        };
+      });
+
+      const safeMin = minUnits === Infinity ? 0 : minUnits;
+      const partsWithStatus = rawDetails.map(d => {
+        const isBtl = (d.possibleUnits === safeMin);
+        return buildPartInfo(d.name, d.requiredPerUnit, d.poolTotal, d.possibleUnits, isBtl);
+      });
+
+      results[pId] = {
+        productId: pId,
+        productName: prod.name,
+        maxCapacity: safeMin,
+        bottleneckCategory: btlName || "材料充足",
+        bottleneckLimit: safeMin,
+        partsDetail: partsWithStatus
+      };
+    });
+  } catch (dynErr) {
+    // 若動態讀取發生異常，保障 1~6 號經典商品正常輸出
+  }
+
   return results;
 }
 

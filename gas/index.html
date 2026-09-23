@@ -439,6 +439,63 @@
     </div>
   </div>
 
+  <!-- ==================== 商品與 BOM 配方編輯 Modal ==================== -->
+  <div id="modal-bom-editor" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 640px; width: 95%;">
+      <div class="card-title">
+        <span id="bom-modal-title" class="card-title-text">✏️ 編輯商品與 BOM 材料配方</span>
+        <button class="btn btn-outline btn-sm" onclick="closeBOMModal()">✕</button>
+      </div>
+
+      <div class="grid grid-2" style="gap: 12px;">
+        <div class="form-group">
+          <label class="form-label">商品代碼 (ID) <span style="color:red;">*</span></label>
+          <input type="text" id="bom-input-id" class="form-input" placeholder="例如：7">
+        </div>
+        <div class="form-group">
+          <label class="form-label">體驗商品名稱 <span style="color:red;">*</span></label>
+          <input type="text" id="bom-input-name" class="form-input" placeholder="例如：手作皮革收納盒">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">商品簡介說明</label>
+        <input type="text" id="bom-input-desc" class="form-input" placeholder="例如：植鞣皮革 DIY 材料套組">
+      </div>
+
+      <!-- 配方材料動態表格 -->
+      <div style="margin: 16px 0 8px 0; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-weight: 700; font-size: 13px; color: #334155;">
+          🧩 所需原物料配方比例清單 (BOM)
+        </span>
+        <button class="btn btn-outline btn-sm" type="button" onclick="addBOMItemRow()">
+          ➕ 增加材料行
+        </button>
+      </div>
+
+      <div class="table-container" style="max-height: 240px; overflow-y: auto; margin-bottom: 16px;">
+        <table style="font-size: 13px;">
+          <thead>
+            <tr>
+              <th style="width: 40%;">材料種類/分類代碼</th>
+              <th style="width: 25%;">單份耗用量</th>
+              <th style="width: 25%;">部件說明/備註</th>
+              <th style="width: 10%;">刪除</th>
+            </tr>
+          </thead>
+          <tbody id="bom-items-tbody"></tbody>
+        </table>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="btn btn-outline" type="button" onclick="closeBOMModal()">取消</button>
+        <button class="btn btn-primary" type="button" onclick="submitSaveProductAndBOM()">
+          💾 儲存並即時重新推移 ➔
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== 3. 已登入主系統區域 ==================== -->
   <div id="main-system" style="display: none;">
 
@@ -452,6 +509,9 @@
       </button>
       <button id="tab-btn-manager" class="tab-btn" onclick="switchTab('tab-manager')" style="display: none;">
         📦 庫存盤點與 ERP 上傳
+      </button>
+      <button id="tab-btn-bom" class="tab-btn" onclick="switchTab('tab-bom')" style="display: none;">
+        🎨 商品與 BOM 配方維護
       </button>
     </div>
 
@@ -754,53 +814,129 @@
           </div>
         </div>
 
-        <!-- 採購下單登錄與到貨核銷 (INPUT 表單 ＋ 清冊) -->
+        <!-- 採購下單登錄與到貨核銷 (支援單筆INPUT ＋ 批量單據直傳 ＋ 清冊批次核銷) -->
         <div class="card">
           <div class="card-title">
-            <span class="card-title-text">🛒 在途採購管理與新單登錄</span>
-            <span style="font-size: 12px; color: var(--text-muted);">庫管採購 ｜ 到貨一鍵核銷</span>
+            <span class="card-title-text">🛒 在途採購管理與進貨單據匯入</span>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-outline btn-sm" onclick="downloadProcurementTemplate()">
+                📥 下載採購單範本 (.csv)
+              </button>
+            </div>
           </div>
 
-          <!-- 採購下單登錄 INPUT 表單 -->
-          <div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 16px;">
-            <div style="font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--primary);">
-              ➕ 新增採購下單 (INPUT)
+          <!-- 批量採購/進貨單據匯入折疊面板 -->
+          <div style="background: #f1f5f9; padding: 16px; border-radius: 10px; border: 1px solid #cbd5e1; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <div style="font-weight: 700; font-size: 14px; color: var(--primary);">
+                📑 批量單據匯入 (支援 Excel / CSV 檔案直傳或貼上文字)
+              </div>
+              <span style="font-size: 12px; color: var(--text-muted);">一次性輸入多項叫貨物料</span>
             </div>
-            <div class="grid grid-3" style="gap: 12px;">
-              <div class="form-group" style="margin-bottom:0;">
-                <label class="form-label">採購材料品號/品名</label>
-                <select id="po-item-code" class="form-select"></select>
-              </div>
-              <div class="form-group" style="margin-bottom:0;">
-                <label class="form-label">採購數量</label>
-                <input type="number" id="po-qty" class="form-input" min="1" placeholder="例如：100">
-              </div>
-              <div class="form-group" style="margin-bottom:0;">
-                <label class="form-label">預計到貨日</label>
-                <input type="date" id="po-arrival-date" class="form-input">
-              </div>
-            </div>
-            <div class="grid grid-2" style="gap: 12px; margin-top: 10px; align-items: flex-end;">
-              <div class="form-group" style="margin-bottom:0;">
-                <label class="form-label">採購備註 / 供應商</label>
-                <input type="text" id="po-note" class="form-input" placeholder="例如：補折疊籃短栓安全庫存">
-              </div>
+
+            <!-- 拖曳上傳與貼上區域 -->
+            <div class="grid grid-2" style="gap: 12px;">
               <div>
-                <button class="btn btn-primary btn-block" onclick="submitProcurementOrder()">
-                  確認登錄採購單 ➔
+                <div id="po-drop-zone" class="drop-zone" style="padding: 16px;" onclick="document.getElementById('po-file-input').click()">
+                  <div style="font-size: 24px;">📄</div>
+                  <div style="font-size: 13px; font-weight: 600; color: #1e3a8a; margin-top: 4px;">點擊選擇或拖曳採購單檔案</div>
+                  <div style="font-size: 11px; color: #64748b;">支援 .xlsx, .xls, .csv</div>
+                  <input type="file" id="po-file-input" style="display: none;" accept=".xlsx, .xls, .csv" onchange="handlePOFileSelected(event)">
+                </div>
+              </div>
+
+              <div>
+                <textarea id="po-paste-text" class="form-textarea" rows="3" style="font-size: 12px;" placeholder="或由 Excel / ERP 複製多列貼上至此處 (單號、品號、數量、到貨日、備註)..."></textarea>
+                <div style="display: flex; gap: 8px; margin-top: 6px;">
+                  <button class="btn btn-primary btn-sm btn-block" onclick="parsePastedPOText()">
+                    🔍 解析貼上內容
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 預覽與校對表格 (解析成功後動態展現) -->
+            <div id="po-preview-container" style="display: none; margin-top: 14px; background: white; padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-weight: 700; font-size: 13px; color: #0f172a;">
+                  📋 採購單據預覽確認 (<span id="po-preview-count">0</span> 筆明細)
+                </span>
+                <button class="btn btn-outline btn-sm" onclick="clearPOPreview()">✕ 放棄重來</button>
+              </div>
+              <div class="table-container" style="max-height: 220px; overflow-y: auto;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>採購單號</th>
+                      <th>品號</th>
+                      <th>材料名稱規格</th>
+                      <th>採購數量</th>
+                      <th>預計到貨日</th>
+                      <th>備註</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="po-preview-tbody"></tbody>
+                </table>
+              </div>
+              <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="btn btn-success" onclick="confirmBatchCreatePOs()">
+                  🚀 確認批量登錄在途採購清冊 ➔
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- 在途採購清冊表格 (含核銷動作) -->
-          <div style="font-weight: 700; font-size: 14px; margin-bottom: 8px; color: #334155;">
-            📋 在途採購與待到貨清冊
+          <!-- 單筆採購下單登錄 (INPUT 備用) -->
+          <details style="margin-bottom: 16px;">
+            <summary style="font-size: 13px; color: #475569; font-weight: 600; cursor: pointer; padding: 6px 0;">
+              ➕ 展開：單筆採購快速下單 (INPUT)
+            </summary>
+            <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid var(--border); margin-top: 8px;">
+              <div class="grid grid-3" style="gap: 12px;">
+                <div class="form-group" style="margin-bottom:0;">
+                  <label class="form-label">採購材料品號/品名</label>
+                  <select id="po-item-code" class="form-select"></select>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                  <label class="form-label">採購數量</label>
+                  <input type="number" id="po-qty" class="form-input" min="1" placeholder="例如：100">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                  <label class="form-label">預計到貨日</label>
+                  <input type="date" id="po-arrival-date" class="form-input">
+                </div>
+              </div>
+              <div class="grid grid-2" style="gap: 12px; margin-top: 10px; align-items: flex-end;">
+                <div class="form-group" style="margin-bottom:0;">
+                  <label class="form-label">採購備註 / 供應商</label>
+                  <input type="text" id="po-note" class="form-input" placeholder="例如：補折疊籃短栓安全庫存">
+                </div>
+                <div>
+                  <button class="btn btn-primary btn-block" onclick="submitProcurementOrder()">
+                    確認登錄單筆採購 ➔
+                  </button>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <!-- 在途採購清冊表格 (含批次核銷與多選) -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="font-weight: 700; font-size: 14px; color: #334155;">
+              📋 在途採購與待到貨清冊
+            </div>
+            <button id="btn-batch-receive" class="btn btn-success btn-sm" onclick="batchMarkSelectedPOsReceived()" style="display: none;">
+              ✅ 批次確認到貨入庫 (<span id="selected-po-count">0</span>)
+            </button>
           </div>
           <div class="table-container">
             <table>
               <thead>
                 <tr>
+                  <th style="width: 36px; text-align: center;">
+                    <input type="checkbox" id="po-select-all" onchange="toggleSelectAllPOs(this.checked)">
+                  </th>
                   <th>採購單號</th>
                   <th>下單日</th>
                   <th>品名規格</th>
@@ -811,7 +947,7 @@
                 </tr>
               </thead>
               <tbody id="pending-pos-tbody">
-                <tr><td colspan="7" style="text-align:center; color:#94a3b8;">目前無在途採購項目</td></tr>
+                <tr><td colspan="8" style="text-align:center; color:#94a3b8;">目前無在途採購項目</td></tr>
               </tbody>
             </table>
           </div>
@@ -880,6 +1016,31 @@
           </button>
         </div>
 
+      </div>
+
+      <!-- ================= TAB 4: 商品與 BOM 配方維護 ================= -->
+      <div id="tab-bom" class="tab-pane">
+        <div class="card">
+          <div class="card-title">
+            <span class="card-title-text">🎨 DIY 體驗商品與原物料 BOM 配方維護中心</span>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-primary btn-sm" onclick="openNewProductModal()">
+                ➕ 新增 DIY 體驗商品
+              </button>
+              <button class="btn btn-outline btn-sm" onclick="loadBOMManagement()">
+                🔄 刷新列表
+              </button>
+            </div>
+          </div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            此處為全系統商品與 BOM 原物料單份耗用配方設定（SSOT）。新增商品或調整材料比例後，系統動態短板引擎將自動即時運算可接單組數並更新業務預約端。
+          </p>
+
+          <!-- 商品與配方列表清冊 (卡片列表) -->
+          <div id="bom-products-container">
+            <div style="text-align:center; padding:30px; color:#94a3b8;">載入商品與配方清單中...</div>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -1010,22 +1171,26 @@
       const btnAdmin = document.getElementById("tab-btn-admin");
       const btnBooking = document.getElementById("tab-btn-booking");
       const btnManager = document.getElementById("tab-btn-manager");
+      const btnBom = document.getElementById("tab-btn-bom");
 
       if (currentUser.role === "ADMIN") {
         btnAdmin.style.display = "inline-block";
         btnBooking.style.display = "inline-block";
         btnManager.style.display = "inline-block";
+        if (btnBom) btnBom.style.display = "inline-block";
         switchTab("tab-admin");
         loadUsersList();
       } else if (currentUser.role === "SALES") {
         btnAdmin.style.display = "none";
         btnBooking.style.display = "inline-block";
         btnManager.style.display = "none";
+        if (btnBom) btnBom.style.display = "none";
         switchTab("tab-booking");
       } else if (currentUser.role === "INVENTORY") {
         btnAdmin.style.display = "none";
         btnBooking.style.display = "none";
         btnManager.style.display = "inline-block";
+        if (btnBom) btnBom.style.display = "inline-block";
         switchTab("tab-manager");
       }
 
@@ -1106,6 +1271,11 @@
       if (tabId === "tab-admin") document.getElementById("tab-btn-admin").classList.add("active");
       if (tabId === "tab-booking") document.getElementById("tab-btn-booking").classList.add("active");
       if (tabId === "tab-manager") document.getElementById("tab-btn-manager").classList.add("active");
+      if (tabId === "tab-bom") {
+        const b = document.getElementById("tab-btn-bom");
+        if (b) b.classList.add("active");
+        loadBOMManagement();
+      }
     }
 
     // ==================== 儀表板資料與抽屜渲染 ====================
@@ -1136,6 +1306,9 @@
           // 2. 渲染組數看板 ＋ 抽屜 (業務端 與 庫存端)
           renderCapacitiesDrawers("prod-capacities-list-booking", capsArray, res.safetyFloorConfig);
           renderCapacitiesDrawers("prod-capacities-list-manager", capsArray, res.safetyFloorConfig);
+
+          // 2.1 動態更新業務端預約體驗商品下拉選單
+          renderBookingProductSelect(res.products);
 
           // 3. 渲染物料下拉選單 (抽盤 ＋ 採購)
           renderMaterialSelect(res.materials);
@@ -1266,11 +1439,28 @@
       `).join("");
     }
 
-    // 渲染在途採購清單 (含到貨核銷按鈕)
+    // 動態更新業務端預約體驗商品下拉選單
+    function renderBookingProductSelect(products) {
+      const select = document.getElementById("bk-product");
+      if (!select || !products || products.length === 0) return;
+      const currentVal = select.value;
+      select.innerHTML = products.map(p => `
+        <option value="${p.id}">${p.id}. ${p.name} (${p.desc || ''})</option>
+      `).join("");
+      if (currentVal && products.some(p => p.id === currentVal)) {
+        select.value = currentVal;
+      }
+    }
+
+    // 渲染在途採購清單 (含多選 Checkbox 與核銷操作)
     function renderPendingPOs(list) {
       const tbody = document.getElementById("pending-pos-tbody");
+      const selectAllChk = document.getElementById("po-select-all");
+      if (selectAllChk) selectAllChk.checked = false;
+      updateSelectedPOCount();
+
       if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:20px 10px;">目前無在途採購項目</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#94a3b8; padding:20px 10px;">目前無在途採購項目</td></tr>';
         return;
       }
       tbody.innerHTML = list.map(p => {
@@ -1280,9 +1470,11 @@
             ✅ 標記已到貨
           </button>
         `;
+        const chkBox = isReceived ? '' : `<input type="checkbox" class="po-item-chk" value="${p.poNumber}" onchange="updateSelectedPOCount()">`;
 
         return `
           <tr>
+            <td style="text-align:center;">${chkBox}</td>
             <td><strong>${p.poNumber}</strong></td>
             <td>${p.orderDate}</td>
             <td>${p.itemName}</td>
@@ -1293,6 +1485,441 @@
           </tr>
         `;
       }).join("");
+    }
+
+    // 在途採購多選勾選切換
+    function toggleSelectAllPOs(checked) {
+      document.querySelectorAll(".po-item-chk").forEach(chk => {
+        chk.checked = checked;
+      });
+      updateSelectedPOCount();
+    }
+
+    function updateSelectedPOCount() {
+      const chks = document.querySelectorAll(".po-item-chk:checked");
+      const btn = document.getElementById("btn-batch-receive");
+      const countSpan = document.getElementById("selected-po-count");
+      if (chks.length > 0) {
+        if (btn) btn.style.display = "inline-flex";
+        if (countSpan) countSpan.innerText = chks.length;
+      } else {
+        if (btn) btn.style.display = "none";
+      }
+    }
+
+    // 批次標記已到貨核銷
+    function batchMarkSelectedPOsReceived() {
+      const chks = document.querySelectorAll(".po-item-chk:checked");
+      if (chks.length === 0) {
+        alert("請先勾選欲核銷入庫的採購單！");
+        return;
+      }
+      const poList = Array.from(chks).map(c => c.value);
+      if (!confirm(`確定將選取的 ${poList.length} 筆採購單標記為【已到貨入庫】嗎？`)) return;
+
+      showLoading(true, `批次核銷 ${poList.length} 筆採購單中...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("批次核銷失敗: " + err);
+        })
+        .api_batchMarkProcurementReceived(poList);
+    }
+
+    // 下載標準採購單 CSV 範本
+    function downloadProcurementTemplate() {
+      const csvHeader = "採購單號,物料品號,採購數量,預計到貨日(yyyy/MM/dd),備註說明\n";
+      const sampleRows = [
+        "PO-20260923-01,310FBXX001B000071,50,2026/10/05,海軍藍折疊籃框補貨",
+        "PO-20260923-02,21PIFBXX000001,500,2026/10/05,鍍五彩短栓叫貨",
+        "PO-20260923-03,5D2000003,100,2026/10/08,著色框圖A7共用料補庫存"
+      ].join("\n");
+      const blob = new Blob(["\uFEFF" + csvHeader + sampleRows], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "DIY物料採購下單範本.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // 處理採購檔案直傳 (SheetJS)
+    let parsedPOPreviewList = [];
+
+    function handlePOFileSelected(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      showLoading(true, "解析採購單據檔案中...");
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: "array" });
+          const firstSheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[firstSheetName];
+          const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+          parseRawPORows(rows);
+        } catch (err) {
+          showLoading(false);
+          alert("檔案解析失敗: " + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      e.target.value = "";
+    }
+
+    // 處理貼上之採購文字 (TSV/CSV)
+    function parsePastedPOText() {
+      const text = document.getElementById("po-paste-text").value.trim();
+      if (!text) {
+        alert("請先貼上採購單內容！");
+        return;
+      }
+      const lines = text.split(/\r?\n/);
+      const rows = lines.map(line => line.split(line.includes("\t") ? "\t" : ","));
+      parseRawPORows(rows);
+    }
+
+    // 解析二維陣列採購資料並進行白名單校對
+    function parseRawPORows(rows) {
+      showLoading(true, "檢驗採購明細中...");
+      if (!rows || rows.length === 0) {
+        showLoading(false);
+        alert("單據內容為空！");
+        return;
+      }
+
+      // 若第一列為表頭則跳過
+      let dataRows = rows;
+      const firstRowStr = rows[0].join(" ");
+      if (firstRowStr.includes("品號") || firstRowStr.includes("數量") || firstRowStr.includes("單號")) {
+        dataRows = rows.slice(1);
+      }
+
+      parsedPOPreviewList = [];
+      const now = new Date();
+      const defaultArrival = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+      const masterList = (cachedDashboardData && cachedDashboardData.materials) ? cachedDashboardData.materials : [];
+
+      dataRows.forEach((r, idx) => {
+        if (!r || r.length < 2) return;
+        // 欄位容錯：單號, 品號, 數量, 到貨日, 備註 或 品號, 數量, 到貨日, 備註
+        let poNo = "", itemCode = "", qty = 0, arrivalDate = "", note = "";
+
+        if (String(r[0]).startsWith("PO-") || String(r[0]).length >= 8 && isNaN(Number(r[1])) === false) {
+          poNo = String(r[0]).trim();
+          itemCode = String(r[1]).trim();
+          qty = Number(r[2]) || 0;
+          arrivalDate = String(r[3] || "").trim() || defaultArrival;
+          note = String(r[4] || "").trim();
+        } else {
+          itemCode = String(r[0]).trim();
+          qty = Number(r[1]) || 0;
+          arrivalDate = String(r[2] || "").trim() || defaultArrival;
+          note = String(r[3] || "").trim();
+        }
+
+        if (!itemCode || qty <= 0) return;
+
+        // 比對白名單品名
+        const matched = masterList.find(m => m.itemCode === itemCode);
+        const itemName = matched ? `${matched.itemName} (${matched.category})` : itemCode;
+
+        parsedPOPreviewList.push({
+          poNumber: poNo,
+          itemCode: itemCode,
+          itemName: itemName,
+          qty: qty,
+          arrivalDate: arrivalDate.replace(/\//g, "-"),
+          note: note,
+          isMatched: !!matched
+        });
+      });
+
+      showLoading(false);
+      if (parsedPOPreviewList.length === 0) {
+        alert("未解析出任何有效的採購項目 (請確認品號與採購數量皆有效)！");
+        return;
+      }
+      renderPOPreview();
+    }
+
+    // 渲染採購單據預覽校對表格
+    function renderPOPreview() {
+      const container = document.getElementById("po-preview-container");
+      const countEl = document.getElementById("po-preview-count");
+      const tbody = document.getElementById("po-preview-tbody");
+
+      container.style.display = "block";
+      countEl.innerText = parsedPOPreviewList.length;
+
+      tbody.innerHTML = parsedPOPreviewList.map((item, idx) => `
+        <tr>
+          <td><input type="text" class="form-input" style="padding:4px 6px; font-size:12px;" value="${item.poNumber}" placeholder="自動產生" onchange="parsedPOPreviewList[${idx}].poNumber=this.value"></td>
+          <td><strong>${item.itemCode}</strong></td>
+          <td style="font-size:12px; color:${item.isMatched ? '#0f172a' : '#b91c1c'};">${item.itemName}</td>
+          <td><input type="number" class="form-input" style="width:70px; padding:4px 6px; font-size:12px;" min="1" value="${item.qty}" onchange="parsedPOPreviewList[${idx}].qty=Number(this.value)"></td>
+          <td><input type="date" class="form-input" style="padding:4px 6px; font-size:12px;" value="${item.arrivalDate}" onchange="parsedPOPreviewList[${idx}].arrivalDate=this.value"></td>
+          <td><input type="text" class="form-input" style="padding:4px 6px; font-size:12px;" value="${item.note}" placeholder="備註" onchange="parsedPOPreviewList[${idx}].note=this.value"></td>
+          <td style="text-align:center;"><button class="btn btn-danger btn-sm" onclick="deletePOPreviewRow(${idx})">✕</button></td>
+        </tr>
+      `).join("");
+    }
+
+    function deletePOPreviewRow(idx) {
+      parsedPOPreviewList.splice(idx, 1);
+      if (parsedPOPreviewList.length === 0) {
+        clearPOPreview();
+      } else {
+        renderPOPreview();
+      }
+    }
+
+    function clearPOPreview() {
+      parsedPOPreviewList = [];
+      document.getElementById("po-preview-container").style.display = "none";
+      document.getElementById("po-paste-text").value = "";
+    }
+
+    // 送出確認批量建立採購單
+    function confirmBatchCreatePOs() {
+      if (parsedPOPreviewList.length === 0) {
+        alert("預覽清單為空！");
+        return;
+      }
+
+      showLoading(true, `正在批量登錄 ${parsedPOPreviewList.length} 筆在途採購明細中...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            clearPOPreview();
+            loadDashboard();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("批量登錄失敗: " + err);
+        })
+        .api_batchCreateProcurementOrders(parsedPOPreviewList);
+    }
+
+    // ==================== 🎨 商品與 BOM 配方維護中心 JS ====================
+    let cachedBOMData = null;
+
+    function loadBOMManagement() {
+      showLoading(true, "載入商品與 BOM 配方清冊中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          if (!res.success) {
+            alert("❌ " + res.message);
+            return;
+          }
+          cachedBOMData = res;
+          renderBOMProducts(res.products, res.bomRules);
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("載入 BOM 失敗: " + err);
+        })
+        .api_getAllProductsAndBOM();
+    }
+
+    function renderBOMProducts(products, bomRules) {
+      const container = document.getElementById("bom-products-container");
+      if (!products || products.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:30px; color:#94a3b8;">目前無商品資料</div>';
+        return;
+      }
+
+      const ruleMap = {};
+      (bomRules || []).forEach(r => {
+        if (!ruleMap[r.productId]) ruleMap[r.productId] = [];
+        ruleMap[r.productId].push(r);
+      });
+
+      container.innerHTML = products.map(p => {
+        const rules = ruleMap[p.id] || [];
+        const isBuiltin = ["1","2","3","4","5","6"].includes(p.id);
+        const rulesBadges = rules.map(r => `
+          <span style="display:inline-block; background:#f1f5f9; border:1px solid #cbd5e1; padding:3px 8px; border-radius:6px; font-size:12px; margin:2px 4px 2px 0;">
+            <b>${r.category}</b> × ${r.qty} <span style="color:#64748b;">(${r.note || ''})</span>
+          </span>
+        `).join("");
+
+        const deleteBtn = isBuiltin ? '' : `
+          <button class="btn btn-danger btn-sm" onclick="handleDeleteProduct('${p.id}', '${p.name}')">
+            🗑️ 刪除商品
+          </button>
+        `;
+
+        return `
+          <div class="card" style="border-left: 4px solid var(--primary); margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="background:var(--primary-light); color:var(--primary); font-weight:700; padding:2px 8px; border-radius:6px; font-size:12px;">ID: ${p.id}</span>
+                  <strong style="font-size: 16px; color: #1e293b;">${p.name}</strong>
+                  ${isBuiltin ? '<span style="font-size:11px; background:#e0e7ff; color:#3730a3; padding:2px 6px; border-radius:4px;">經典內建商品</span>' : '<span style="font-size:11px; background:#dcfce7; color:#166534; padding:2px 6px; border-radius:4px;">自訂DIY商品</span>'}
+                </div>
+                <p style="font-size: 13px; color: #64748b; margin-top: 4px;">${p.desc || ''}</p>
+              </div>
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-outline btn-sm" onclick="openEditProductModal('${p.id}')">
+                  ✏️ 編輯商品與配方
+                </button>
+                ${deleteBtn}
+              </div>
+            </div>
+            <div style="margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 8px;">
+              <div style="font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 4px;">
+                🧩 單份耗用材料組成 (${rules.length} 項部件)：
+              </div>
+              <div>${rulesBadges || '<span style="color:#94a3b8; font-size:12px;">暫無配方</span>'}</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function openNewProductModal() {
+      document.getElementById("bom-modal-title").innerText = "➕ 新增 DIY 體驗商品與配方";
+      document.getElementById("bom-input-id").value = "";
+      document.getElementById("bom-input-id").disabled = false;
+      document.getElementById("bom-input-name").value = "";
+      document.getElementById("bom-input-desc").value = "";
+      document.getElementById("bom-items-tbody").innerHTML = "";
+      addBOMItemRow();
+      document.getElementById("modal-bom-editor").style.display = "flex";
+    }
+
+    function openEditProductModal(productId) {
+      if (!cachedBOMData) return;
+      const prod = cachedBOMData.products.find(p => p.id === productId);
+      if (!prod) return;
+
+      document.getElementById("bom-modal-title").innerText = `✏️ 編輯【${prod.name}】與配方`;
+      document.getElementById("bom-input-id").value = prod.id;
+      document.getElementById("bom-input-id").disabled = true; // 既有商品不可改代碼
+      document.getElementById("bom-input-name").value = prod.name;
+      document.getElementById("bom-input-desc").value = prod.desc || "";
+
+      const rules = cachedBOMData.bomRules.filter(r => r.productId === productId);
+      const tbody = document.getElementById("bom-items-tbody");
+      tbody.innerHTML = "";
+      if (rules.length === 0) {
+        addBOMItemRow();
+      } else {
+        rules.forEach(r => addBOMItemRow(r.category, r.qty, r.note));
+      }
+      document.getElementById("modal-bom-editor").style.display = "flex";
+    }
+
+    function closeBOMModal() {
+      document.getElementById("modal-bom-editor").style.display = "none";
+    }
+
+    function addBOMItemRow(selectedCategory, qty, note) {
+      const tbody = document.getElementById("bom-items-tbody");
+      const cats = (cachedBOMData && cachedBOMData.availableCategories) ? cachedBOMData.availableCategories : [
+        "手能生巧", "旁敲側擊A", "旁敲側擊B", "旁敲側擊C", "旁敲側擊D", "旁敲側擊E", "旁敲側擊F",
+        "繪聲繪影A", "繪聲繪影B", "繪聲繪影C_胖胖盒", "繪聲繪影C_TB200", "繪聲繪影C_TB9", "請多紙膠A"
+      ];
+
+      const optionsHtml = cats.map(c => `
+        <option value="${c}" ${c === selectedCategory ? 'selected' : ''}>${c}</option>
+      `).join("");
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>
+          <select class="form-select bom-row-category" style="padding:4px 6px; font-size:12px;">
+            ${optionsHtml}
+          </select>
+        </td>
+        <td>
+          <input type="number" class="form-input bom-row-qty" style="padding:4px 6px; font-size:12px;" min="1" value="${qty || 1}">
+        </td>
+        <td>
+          <input type="text" class="form-input bom-row-note" style="padding:4px 6px; font-size:12px;" value="${note || ''}" placeholder="例如：長側板4片">
+        </td>
+        <td style="text-align:center;">
+          <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">✕</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+
+    function submitSaveProductAndBOM() {
+      const pId = document.getElementById("bom-input-id").value.trim();
+      const pName = document.getElementById("bom-input-name").value.trim();
+      const pDesc = document.getElementById("bom-input-desc").value.trim();
+
+      if (!pId || !pName) {
+        alert("商品代碼與名稱為必填項目！");
+        return;
+      }
+
+      const rows = document.querySelectorAll("#bom-items-tbody tr");
+      const bomItems = [];
+      rows.forEach(r => {
+        const cat = r.querySelector(".bom-row-category").value;
+        const q = Number(r.querySelector(".bom-row-qty").value) || 1;
+        const n = r.querySelector(".bom-row-note").value.trim();
+        if (cat) {
+          bomItems.push({ category: cat, qty: q, note: n });
+        }
+      });
+
+      if (bomItems.length === 0) {
+        alert("請至少為此商品新增一項材料配方！");
+        return;
+      }
+
+      showLoading(true, "儲存商品與 BOM 配方中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            closeBOMModal();
+            loadBOMManagement();
+            loadDashboard(); // 重新整理前台組數抽屜與業務下拉選單
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("儲存失敗: " + err);
+        })
+        .api_saveProductAndBOM({ id: pId, name: pName, desc: pDesc }, bomItems);
+    }
+
+    function handleDeleteProduct(productId, name) {
+      if (!confirm(`確定要刪除商品【${name}】(ID: ${productId}) 及其所有 BOM 配方嗎？\n此動作將同步影響業務接單選單與推移計算！`)) return;
+
+      showLoading(true, "刪除商品中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadBOMManagement();
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("刪除失敗: " + err);
+        })
+        .api_deleteProduct(productId);
     }
 
     function renderMaterialSelect(materials) {

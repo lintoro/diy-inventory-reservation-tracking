@@ -209,3 +209,142 @@ function setSafetyFloorConfig(weekday, weekend, specialDates) {
   return getSafetyFloorConfig();
 }
 
+/**
+ * 取得當前所有 DIY 商品與其 BOM 配方 (由 03_BOM配方設定表 底表驅動，若底表為空則回退至預設常數)
+ * @returns {Object} { products: Array, bomRules: Array }
+ */
+function getDynamicProductsAndBOM() {
+  try {
+    const ss = getSpreadsheet();
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.BOM_RULES);
+    if (!sheet) {
+      return { products: CONFIG.PRODUCTS, bomRules: CONFIG.BOM_RULES };
+    }
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return { products: CONFIG.PRODUCTS, bomRules: CONFIG.BOM_RULES };
+    }
+
+    const rows = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+    const productsMap = {};
+    const bomRules = [];
+
+    rows.forEach(r => {
+      const pId = String(r[0] || "").trim();
+      const pName = String(r[1] || "").trim();
+      const cat = String(r[2] || "").trim();
+      const qty = Number(r[3]) || 1;
+      const note = String(r[4] || "").trim();
+
+      if (!pId || !pName || !cat) return;
+
+      if (!productsMap[pId]) {
+        // 從預設 PRODUCTS 尋找對應描述，或使用預設
+        const defaultProd = CONFIG.PRODUCTS.find(p => p.id === pId);
+        productsMap[pId] = {
+          id: pId,
+          name: pName,
+          desc: defaultProd ? defaultProd.desc : `${pName} DIY體驗材料包`
+        };
+      }
+
+      bomRules.push({
+        productId: pId,
+        productName: pName,
+        category: cat,
+        qty: qty,
+        note: note
+      });
+    });
+
+    const products = Object.values(productsMap);
+    if (products.length === 0) {
+      return { products: CONFIG.PRODUCTS, bomRules: CONFIG.BOM_RULES };
+    }
+
+    return { products: products, bomRules: bomRules };
+  } catch (err) {
+    return { products: CONFIG.PRODUCTS, bomRules: CONFIG.BOM_RULES };
+  }
+}
+
+/**
+ * 儲存或更新 DIY 商品及其 BOM 配方至 03_BOM配方設定表 底表
+ * @param {Object} product { id, name, desc }
+ * @param {Array<Object>} bomItems [ { category, qty, note } ]
+ */
+function saveDynamicProductAndBOM(product, bomItems) {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEETS.BOM_RULES);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SHEETS.BOM_RULES);
+    sheet.appendRow(["產品代碼", "體驗方案名稱", "所需材料種類代碼", "單份用量", "備註說明"]);
+  }
+
+  const pId = String(product.id || "").trim();
+  const pName = String(product.name || "").trim();
+  if (!pId || !pName) {
+    throw new Error("商品代碼與名稱不得為空");
+  }
+  if (!bomItems || !Array.isArray(bomItems) || bomItems.length === 0) {
+    throw new Error("請至少為此商品設定一項材料配方");
+  }
+
+  // 讀取現有所有資料
+  const lastRow = sheet.getLastRow();
+  let remainingRows = [];
+  if (lastRow > 1) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+    // 過濾掉該商品原本的舊配方
+    remainingRows = existing.filter(r => String(r[0] || "").trim() !== pId);
+  }
+
+  // 新的配方列
+  const newRows = bomItems.map(item => [
+    pId,
+    pName,
+    String(item.category || "").trim(),
+    Number(item.qty) || 1,
+    String(item.note || "").trim()
+  ]);
+
+  const allRows = remainingRows.concat(newRows);
+
+  // 清空重新寫入
+  sheet.clearContents();
+  sheet.appendRow(["產品代碼", "體驗方案名稱", "所需材料種類代碼", "單份用量", "備註說明"]);
+  if (allRows.length > 0) {
+    sheet.getRange(2, 1, allRows.length, 5).setValues(allRows);
+  }
+
+  return getDynamicProductsAndBOM();
+}
+
+/**
+ * 刪除 DIY 商品與其在 03_BOM配方設定表 底表之所有配方
+ * @param {string} productId 商品代碼
+ */
+function deleteDynamicProduct(productId) {
+  const pId = String(productId || "").trim();
+  if (!pId) throw new Error("未指定商品代碼");
+
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.BOM_RULES);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  const existing = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  const remaining = existing.filter(r => String(r[0] || "").trim() !== pId);
+
+  sheet.clearContents();
+  sheet.appendRow(["產品代碼", "體驗方案名稱", "所需材料種類代碼", "單份用量", "備註說明"]);
+  if (remaining.length > 0) {
+    sheet.getRange(2, 1, remaining.length, 5).setValues(remaining);
+  }
+
+  return getDynamicProductsAndBOM();
+}
+

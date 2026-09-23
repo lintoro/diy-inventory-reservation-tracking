@@ -523,6 +523,109 @@ function test_Phase7_DrawerAndSafetyFloor() {
   return results;
 }
 
+/**
+ * 階段九測試：批量採購單據匯入、批次到貨核銷與動態 DIY 商品 BOM 維護驗證
+ */
+function test_Phase9_BatchProcurementAndDynamicBOM() {
+  const results = {
+    testName: "階段九測試：批量採購匯入、批次核銷與動態商品BOM維護",
+    timestamp: new Date().toISOString(),
+    passed: true,
+    details: []
+  };
+
+  function assert(condition, message) {
+    results.details.push({
+      item: message,
+      status: condition ? "PASS" : "FAIL"
+    });
+    if (!condition) results.passed = false;
+  }
+
+  // 1. 測試批量採購單據新增 (api_batchCreateProcurementOrders)
+  const testBatchOrders = [
+    {
+      poNumber: "TEST-PO-BATCH-01",
+      itemCode: "310FBXX001B000071",
+      qty: 25,
+      arrivalDate: "2026-10-15",
+      note: "自動化測試單據1"
+    },
+    {
+      poNumber: "TEST-PO-BATCH-02",
+      itemCode: "21PIFBXX000001",
+      qty: 300,
+      arrivalDate: "2026-10-15",
+      note: "自動化測試單據2"
+    }
+  ];
+
+  const batchCreateRes = api_batchCreateProcurementOrders(testBatchOrders);
+  assert(batchCreateRes.success === true, "api_batchCreateProcurementOrders 批量寫入成功 (PASS)");
+  assert(batchCreateRes.count === 2, "成功建立 2 筆批量採購紀錄 (PASS)");
+
+  // 2. 測試批次到貨核銷 (api_batchMarkProcurementReceived)
+  const batchReceiveRes = api_batchMarkProcurementReceived(["TEST-PO-BATCH-01", "TEST-PO-BATCH-02"]);
+  assert(batchReceiveRes.success === true, "api_batchMarkProcurementReceived 批次核銷成功 (PASS)");
+  assert(batchReceiveRes.count === 2, "成功將 2 筆測試採購單標記為【已到貨入庫】 (PASS)");
+
+  // 清除測試採購單
+  try {
+    const ss = getSpreadsheet();
+    const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
+    const lastRow = poSheet.getLastRow();
+    if (lastRow > 1) {
+      const vals = poSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      for (let i = vals.length - 1; i >= 0; i--) {
+        if (String(vals[i][0]).startsWith("TEST-PO-BATCH")) {
+          poSheet.deleteRow(i + 2);
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 3. 測試動態商品與 BOM 配方儲存 (api_saveProductAndBOM)
+  const testProduct = {
+    id: "99",
+    name: "手作皮革小置物盒 (測試商品)",
+    desc: "自動化測試專用自訂商品"
+  };
+  const testBOMItems = [
+    { category: "手能生巧", qty: 2, note: "小工具2組" },
+    { category: "繪聲繪影A", qty: 1, note: "框圖A7 1張" }
+  ];
+
+  const saveBOMRes = api_saveProductAndBOM(testProduct, testBOMItems);
+  assert(saveBOMRes.success === true, "api_saveProductAndBOM 儲存自訂商品成功 (PASS)");
+
+  // 4. 驗證動態短板引擎能正確試算新商品 (calculateProductCapacities)
+  const capacities = calculateProductCapacities();
+  const newProdCap = capacities["99"];
+  assert(newProdCap !== undefined, "calculateProductCapacities 成功動態辨識 ID=99 之新商品 (PASS)");
+  assert(newProdCap && Array.isArray(newProdCap.partsDetail), "新商品 partsDetail 陣列完整產生 (PASS)");
+  assert(newProdCap && newProdCap.partsDetail.length === 2, "新商品包含 2 項部件配方 (PASS)");
+
+  // 5. 測試動態商品刪除 (api_deleteProduct)
+  const delRes = api_deleteProduct("99");
+  assert(delRes.success === true, "api_deleteProduct 成功刪除測試商品 (PASS)");
+  const afterDelCapacities = calculateProductCapacities();
+  assert(afterDelCapacities["99"] === undefined, "刪除後新商品自可做清單移除，底表還原乾淨 (PASS)");
+
+  // UI 彈窗回報
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const statusIcon = results.passed ? "✅" : "❌";
+    const detailMsg = results.details.map(d => `${d.status === "PASS" ? "✔️" : "✖️"} ${d.item}`).join("\n");
+    ui.alert(
+      `${statusIcon} ${results.testName}`,
+      `測試狀態: ${results.passed ? "全部通過 (SUCCESS)" : "存在失敗項目"}\n\n檢驗細項:\n${detailMsg}`,
+      ui.ButtonSet.OK
+    );
+  } catch (e) {}
+
+  return results;
+}
+
 // 注意：doGet 入口唯一定義在 05_API.js，此處不重複定義以避免函式衝突
 
 

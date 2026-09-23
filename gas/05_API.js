@@ -94,12 +94,14 @@ function api_getDashboardOverview() {
     // 散客保底配置
     const safetyFloorCfg = getSafetyFloorConfig();
 
+    const dynamicConfig = getDynamicProductsAndBOM();
+
     return {
       success: true,
       capacities: capacities,
       capacitiesList: capacitiesList,
       materials: CONFIG.MASTER_MATERIALS,
-      products: CONFIG.PRODUCTS,
+      products: dynamicConfig.products,
       recentBookings: recentBookings,
       pendingPOs: pendingPOs,
       safetyFloorConfig: safetyFloorCfg
@@ -346,6 +348,192 @@ function api_markProcurementReceived(poNumber) {
     return { success: false, message: `找不到採購單號 [${cleanPo}]` };
   } catch (err) {
     return { success: false, message: "到貨核銷失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 批次新增多筆採購單 (單據上傳/表格直接輸入)
+ * @param {Array<Object>} ordersList [ { itemCode, qty, arrivalDate, poNumber, note } ]
+ */
+function api_batchCreateProcurementOrders(ordersList) {
+  try {
+    if (!ordersList || !Array.isArray(ordersList) || ordersList.length === 0) {
+      return { success: false, message: "上傳或輸入的單據內容為空" };
+    }
+
+    const ss = getSpreadsheet();
+    const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
+    const now = new Date();
+    const nowStr = Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd");
+    const dateCompact = Utilities.formatDate(now, "Asia/Taipei", "yyyyMMdd");
+    let currentLastRow = poSheet.getLastRow();
+
+    const validRows = [];
+    let counter = 1;
+
+    ordersList.forEach(item => {
+      const itemCode = String(item.itemCode || "").trim();
+      const qty = Number(item.qty) || 0;
+      if (!itemCode || qty <= 0) return;
+
+      const arrivalDateStr = String(item.arrivalDate || "").trim();
+      let poNo = String(item.poNumber || "").trim();
+      if (!poNo) {
+        poNo = `PO-${dateCompact}-${String(currentLastRow + counter).padStart(3, "0")}`;
+        counter++;
+      }
+
+      // 查詢品名
+      const mat = CONFIG.MASTER_MATERIALS.find(m => m.itemCode === itemCode);
+      let itemName = mat ? `${mat.itemName} (${mat.category})` : itemCode;
+      if (item.itemName && !mat) {
+        itemName = String(item.itemName);
+      }
+
+      // 計算最晚下單日
+      let deadlineStr = nowStr;
+      if (arrivalDateStr) {
+        const arrD = new Date(arrivalDateStr.replace(/-/g, "/"));
+        if (!isNaN(arrD.getTime())) {
+          const deadD = new Date(arrD.getTime() - (CONFIG.LEAD_TIME_DAYS * 24 * 60 * 60 * 1000));
+          deadlineStr = Utilities.formatDate(deadD, "Asia/Taipei", "yyyy/MM/dd");
+        }
+      }
+
+      validRows.push([
+        poNo,
+        nowStr,
+        deadlineStr,
+        itemCode,
+        itemName,
+        qty,
+        "已下單在途",
+        "批量單據匯入",
+        String(item.note || "")
+      ]);
+    });
+
+    if (validRows.length === 0) {
+      return { success: false, message: "單據中沒有符合條件的有效採購明細 (品號與數量需大於0)" };
+    }
+
+    poSheet.getRange(currentLastRow + 1, 1, validRows.length, 9).setValues(validRows);
+
+    // 重新運算推移
+    generate45DaysProjection();
+
+    return {
+      success: true,
+      count: validRows.length,
+      message: `成功批量登錄 ${validRows.length} 筆在途採購明細，並已自動同步 45 天推移預估！`
+    };
+  } catch (err) {
+    return { success: false, message: "批量登錄採購單失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 批次勾選將多筆在途採購單標記為「已到貨入庫」
+ * @param {Array<string>} poNumberList 採購單號清單
+ */
+function api_batchMarkProcurementReceived(poNumberList) {
+  try {
+    if (!poNumberList || !Array.isArray(poNumberList) || poNumberList.length === 0) {
+      return { success: false, message: "未選取任何採購單" };
+    }
+
+    const targetSet = new Set(poNumberList.map(p => String(p).trim()));
+    const ss = getSpreadsheet();
+    const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
+    const lastRow = poSheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "目前無採購紀錄" };
+
+    const data = poSheet.getRange(2, 1, lastRow - 1, 7).getValues();
+    let updatedCount = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      const poNo = String(data[i][0]).trim();
+      if (targetSet.has(poNo) && data[i][6] !== "已到貨入庫") {
+        poSheet.getRange(i + 2, 7).setValue("已到貨入庫");
+        updatedCount++;
+      }
+    }
+
+    // 重新計算推移
+    generate45DaysProjection();
+
+    return {
+      success: true,
+      count: updatedCount,
+      message: `成功將 ${updatedCount} 筆採購單標記為【已到貨入庫】！`
+    };
+  } catch (err) {
+    return { success: false, message: "批次到貨核銷失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 取得所有 DIY 商品與其 BOM 配方明細及可用材料分類 (供商品維護管理介面使用)
+ */
+function api_getAllProductsAndBOM() {
+  try {
+    const dyn = getDynamicProductsAndBOM();
+    
+    // 彙整所有可用的材料分類清單
+    const categoriesSet = new Set();
+    CONFIG.MASTER_MATERIALS.forEach(m => {
+      if (m.category) categoriesSet.add(m.category);
+    });
+
+    return {
+      success: true,
+      products: dyn.products,
+      bomRules: dyn.bomRules,
+      availableCategories: Array.from(categoriesSet),
+      masterMaterials: CONFIG.MASTER_MATERIALS
+    };
+  } catch (err) {
+    return { success: false, message: "載入商品與配方失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 儲存或更新 DIY 商品及其材料配方 (可新增或修改材料與用量)
+ * @param {Object} productData { id, name, desc }
+ * @param {Array<Object>} bomItems [ { category, qty, note } ]
+ */
+function api_saveProductAndBOM(productData, bomItems) {
+  try {
+    const res = saveDynamicProductAndBOM(productData, bomItems);
+    // 重新試算 45 天動態推移
+    generate45DaysProjection();
+    return {
+      success: true,
+      message: `商品【${productData.name}】及其 BOM 配方已成功儲存並同步至系統！`,
+      products: res.products,
+      bomRules: res.bomRules
+    };
+  } catch (err) {
+    return { success: false, message: "儲存商品與配方失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 刪除指定 DIY 商品及其 BOM 配方
+ * @param {string} productId 商品代碼
+ */
+function api_deleteProduct(productId) {
+  try {
+    const res = deleteDynamicProduct(productId);
+    generate45DaysProjection();
+    return {
+      success: true,
+      message: `商品代碼 [${productId}] 及其 BOM 配方已成功刪除！`,
+      products: res.products,
+      bomRules: res.bomRules
+    };
+  } catch (err) {
+    return { success: false, message: "刪除商品失敗: " + err.message };
   }
 }
 

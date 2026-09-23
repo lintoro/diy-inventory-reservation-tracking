@@ -6,11 +6,11 @@
 
 ## 一、 系統正式線上入口 (Production Endpoints)
 
-- **Web App 操作介面（工號登入 ＋ 活動抽屜 ＋ 採購核銷 ＋ 保底調控 ＋ ERP 直傳）**：
+- **Web App 操作介面（工號登入 ＋ 活動抽屜 ＋ 採購核銷與單據直傳 ＋ 商品BOM維護中心 ＋ ERP 直傳）**：
   👉 [https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec](https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec)
-  - 部署版本：`@8`（分頁標籤更名、>50套短板免催單、預約單號INPUT、採購實用登錄與到貨核銷、推移速查記憶體即時試算）
+  - 部署版本：`@9`（進貨單據批量拖曳解析上傳、採購單 CSV 範本下載、多選批次到貨核銷、動態商品與 BOM 配方維護中心、動態短板引擎）
   - 預設初始最高管理者：工號 `B111014`，預設密碼 `000000`
-  - 介面：響應式多角色視角（ADMIN 人員管理 + 業務預約端 + 庫存盤點與 ERP 上傳）
+  - 介面：響應式多角色視角（ADMIN 人員管理 + 業務預約端 + 庫存盤點與 ERP 上傳 + 🎨 商品與 BOM 維護中心）
 - **Google 試算表（資料庫 SSOT）**：
   👉 [https://docs.google.com/spreadsheets/d/1D_rEF40gUEuGtNHhOpE165p5fhTmtD14vORIPZclrQc/edit](https://docs.google.com/spreadsheets/d/1D_rEF40gUEuGtNHhOpE165p5fhTmtD14vORIPZclrQc/edit)
 - **Google Apps Script 專案後端**：
