@@ -95,12 +95,13 @@ function api_getDashboardOverview() {
     const safetyFloorCfg = getSafetyFloorConfig();
 
     const dynamicConfig = getDynamicProductsAndBOM();
+    const dynamicMaterials = getDynamicMasterMaterials();
 
     return {
       success: true,
       capacities: capacities,
       capacitiesList: capacitiesList,
-      materials: CONFIG.MASTER_MATERIALS,
+      materials: dynamicMaterials,
       products: dynamicConfig.products,
       recentBookings: recentBookings,
       pendingPOs: pendingPOs,
@@ -478,10 +479,11 @@ function api_batchMarkProcurementReceived(poNumberList) {
 function api_getAllProductsAndBOM() {
   try {
     const dyn = getDynamicProductsAndBOM();
+    const dynamicMaterials = getDynamicMasterMaterials();
     
-    // 彙整所有可用的材料分類清單
+    // 彙整所有可用的材料分類清單 (包含底表中所有已存在分類)
     const categoriesSet = new Set();
-    CONFIG.MASTER_MATERIALS.forEach(m => {
+    dynamicMaterials.forEach(m => {
       if (m.category) categoriesSet.add(m.category);
     });
 
@@ -490,10 +492,65 @@ function api_getAllProductsAndBOM() {
       products: dyn.products,
       bomRules: dyn.bomRules,
       availableCategories: Array.from(categoriesSet),
-      masterMaterials: CONFIG.MASTER_MATERIALS
+      masterMaterials: dynamicMaterials
     };
   } catch (err) {
     return { success: false, message: "載入商品與配方失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 取得所有原物料主檔清冊 (供原物料管理介面使用)
+ */
+function api_getAllMaterials() {
+  try {
+    const list = getDynamicMasterMaterials();
+    const categoriesSet = new Set();
+    list.forEach(m => {
+      if (m.category) categoriesSet.add(m.category);
+    });
+
+    return {
+      success: true,
+      materials: list,
+      categories: Array.from(categoriesSet)
+    };
+  } catch (err) {
+    return { success: false, message: "載入材料清單失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 建立或更新原物料品號主檔 (寫入 02_材料品號對照表 底表)
+ * @param {Object} matData { itemCode, itemName, category, color, note }
+ */
+function api_saveMaterial(matData) {
+  try {
+    const list = saveDynamicMasterMaterial(matData);
+    return {
+      success: true,
+      message: `原物料【${matData.itemName}】(品號: ${matData.itemCode}) 已成功建立並寫入材料主檔！`,
+      materials: list
+    };
+  } catch (err) {
+    return { success: false, message: "儲存原物料失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 停用原物料品號
+ * @param {string} itemCode 材料品號
+ */
+function api_deleteMaterial(itemCode) {
+  try {
+    const list = deleteDynamicMasterMaterial(itemCode);
+    return {
+      success: true,
+      message: `材料品號 [${itemCode}] 已標記為停用！`,
+      materials: list
+    };
+  } catch (err) {
+    return { success: false, message: "停用材料失敗: " + err.message };
   }
 }
 

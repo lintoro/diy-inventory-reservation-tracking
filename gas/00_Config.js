@@ -348,3 +348,113 @@ function deleteDynamicProduct(productId) {
   return getDynamicProductsAndBOM();
 }
 
+/**
+ * 取得當前所有材料品號 (由 02_材料品號對照表 底表驅動，若底表為空則回退至預設 MASTER_MATERIALS)
+ * @returns {Array<Object>} 材料主檔清單
+ */
+function getDynamicMasterMaterials() {
+  try {
+    const ss = getSpreadsheet();
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.MATERIAL_MASTER);
+    if (!sheet) return CONFIG.MASTER_MATERIALS;
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return CONFIG.MASTER_MATERIALS;
+
+    const rows = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+    const list = [];
+    rows.forEach(r => {
+      const code = String(r[0] || "").trim();
+      const name = String(r[1] || "").trim();
+      const cat = String(r[2] || "").trim();
+      const color = String(r[3] || "").trim();
+      const note = String(r[4] || "").trim();
+      const status = String(r[5] || "啟用").trim();
+
+      if (code && status !== "停用") {
+        list.push({
+          itemCode: code,
+          itemName: name,
+          category: cat,
+          color: color,
+          note: note,
+          status: status
+        });
+      }
+    });
+
+    return list.length > 0 ? list : CONFIG.MASTER_MATERIALS;
+  } catch (e) {
+    return CONFIG.MASTER_MATERIALS;
+  }
+}
+
+/**
+ * 儲存或更新原物料品號至 02_材料品號對照表 底表
+ * @param {Object} matData { itemCode, itemName, category, color, note }
+ */
+function saveDynamicMasterMaterial(matData) {
+  const code = String(matData.itemCode || "").trim();
+  const name = String(matData.itemName || "").trim();
+  const cat = String(matData.category || "").trim();
+  const color = String(matData.color || "").trim();
+  const note = String(matData.note || "").trim();
+
+  if (!code || !name || !cat) {
+    throw new Error("材料品號、品名與材料種類代碼為必填項目！");
+  }
+
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEETS.MATERIAL_MASTER);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SHEETS.MATERIAL_MASTER);
+    sheet.appendRow(["ERP品號", "ERP品名", "材料種類代碼", "花色規格", "單份用量說明", "啟用狀態"]);
+  }
+
+  const lastRow = sheet.getLastRow();
+  let found = false;
+  if (lastRow > 1) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+    for (let i = 0; i < existing.length; i++) {
+      if (String(existing[i][0]).trim() === code) {
+        // 更新現有資料
+        sheet.getRange(i + 2, 1, 1, 6).setValues([[code, name, cat, color, note, "啟用"]]);
+        found = true;
+        break;
+      }
+    }
+  }
+
+  if (!found) {
+    sheet.appendRow([code, name, cat, color, note, "啟用"]);
+  }
+
+  return getDynamicMasterMaterials();
+}
+
+/**
+ * 停用或刪除原物料品號
+ * @param {string} itemCode 材料品號
+ */
+function deleteDynamicMasterMaterial(itemCode) {
+  const code = String(itemCode || "").trim();
+  if (!code) throw new Error("未指定材料品號");
+
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.MATERIAL_MASTER);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  const existing = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+  for (let i = 0; i < existing.length; i++) {
+    if (String(existing[i][0]).trim() === code) {
+      sheet.getRange(i + 2, 6).setValue("停用");
+      break;
+    }
+  }
+
+  return getDynamicMasterMaterials();
+}
+

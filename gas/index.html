@@ -358,17 +358,22 @@
         <span class="card-title-text">🔐 同仁工號登入</span>
       </div>
       <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
-        請輸入公司工號與密碼進行驗證。（核可後首次登入需修改預設密碼）
+        請輸入公司工號與密碼進行身分驗證。
       </p>
       <div class="form-group">
         <label class="form-label">公司工號</label>
-        <input type="text" id="login-empno" class="form-input" placeholder="例如：B111014" autocomplete="username">
+        <input type="text" id="login-empno" class="form-input" placeholder="請輸入公司工號" autocomplete="username">
       </div>
       <div class="form-group">
         <label class="form-label">登入密碼</label>
-        <input type="password" id="login-pwd" class="form-input" placeholder="預設密碼為 000000" autocomplete="current-password">
+        <input type="password" id="login-pwd" class="form-input" placeholder="請輸入密碼" autocomplete="current-password">
       </div>
-      <button class="btn btn-primary btn-block" onclick="handleLogin()" style="margin-top: 8px;">
+      <div class="form-group" style="margin-top: -4px; margin-bottom: 14px;">
+        <label style="font-size: 13px; color: #475569; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;">
+          <input type="checkbox" id="remember-empno" style="cursor: pointer; width: 16px; height: 16px;"> 記住公司工號 (ID)
+        </label>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="handleLogin()" style="margin-top: 4px;">
         立即登入 ➔
       </button>
 
@@ -386,15 +391,15 @@
         <span class="card-title-text">📝 新同仁帳號申請</span>
       </div>
       <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
-        填寫工號與姓名送出後，系統管理者核准即可正式啟用（預設密碼 000000）。
+        填寫工號與姓名送出後，由系統管理者核准即可正式啟用。
       </p>
       <div class="form-group">
         <label class="form-label">公司工號 <span style="color:red;">*</span></label>
-        <input type="text" id="reg-empno" class="form-input" placeholder="例如：B123456">
+        <input type="text" id="reg-empno" class="form-input" placeholder="請輸入公司工號">
       </div>
       <div class="form-group">
         <label class="form-label">真實姓名 <span style="color:red;">*</span></label>
-        <input type="text" id="reg-name" class="form-input" placeholder="例如：王小明">
+        <input type="text" id="reg-name" class="form-input" placeholder="請輸入真實姓名">
       </div>
       <div class="form-group">
         <label class="form-label">所屬單位 / 申請備註</label>
@@ -491,6 +496,47 @@
         <button class="btn btn-outline" type="button" onclick="closeBOMModal()">取消</button>
         <button class="btn btn-primary" type="button" onclick="submitSaveProductAndBOM()">
           💾 儲存並即時重新推移 ➔
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 原物料品號建立 Modal ==================== -->
+  <div id="modal-material-editor" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 540px; width: 95%;">
+      <div class="card-title">
+        <span id="mat-modal-title" class="card-title-text">➕ 建立新原物料品號 (貨號品名)</span>
+        <button class="btn btn-outline btn-sm" onclick="closeMaterialModal()">✕</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">ERP 物料品號 (貨號) <span style="color:red;">*</span></label>
+        <input type="text" id="mat-input-code" class="form-input" placeholder="例如：5D2000008 或 自訂品號">
+      </div>
+      <div class="form-group">
+        <label class="form-label">物料完整品名 <span style="color:red;">*</span></label>
+        <input type="text" id="mat-input-name" class="form-input" placeholder="例如：DIY木質手作底座 / 原木色">
+      </div>
+      <div class="grid grid-2" style="gap: 12px;">
+        <div class="form-group">
+          <label class="form-label">材料種類代碼 (總量池) <span style="color:red;">*</span></label>
+          <input type="text" id="mat-input-category" class="form-input" list="mat-category-datalist" placeholder="選擇或自訂種類代碼">
+          <datalist id="mat-category-datalist"></datalist>
+        </div>
+        <div class="form-group">
+          <label class="form-label">花色 / 規格</label>
+          <input type="text" id="mat-input-color" class="form-input" placeholder="例如：原木色、海軍藍、通用">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">單份用量或用途說明</label>
+        <input type="text" id="mat-input-note" class="form-input" placeholder="例如：單份用量1件、三款共用">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
+        <button class="btn btn-outline" type="button" onclick="closeMaterialModal()">取消</button>
+        <button class="btn btn-primary" type="button" onclick="submitSaveMaterial()">
+          💾 儲存並加入材料主檔 ➔
         </button>
       </div>
     </div>
@@ -1041,6 +1087,44 @@
             <div style="text-align:center; padding:30px; color:#94a3b8;">載入商品與配方清單中...</div>
           </div>
         </div>
+
+        <!-- 原物料品號管理卡片 (建立新材料與貨號品名) -->
+        <div class="card">
+          <div class="card-title">
+            <span class="card-title-text">🔩 基礎原物料品號管理 (建立新材料 / 貨號品名)</span>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-primary btn-sm" onclick="openNewMaterialModal()">
+                ➕ 建立新原物料品號
+              </button>
+              <button class="btn btn-outline btn-sm" onclick="loadMaterialsList()">
+                🔄 刷新材料清冊
+              </button>
+            </div>
+          </div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+            建立新原物料品號（貨號、品名與分類代碼）後，即可在上方體驗商品中自由拉入 BOM 表中組成新體驗方案，並自動納入 ERP 匯入辨識、現場抽盤與在途採購清冊中。
+          </p>
+
+          <div class="table-container" style="max-height: 320px; overflow-y: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>ERP品號 (貨號)</th>
+                  <th>品名規格</th>
+                  <th>材料種類代碼</th>
+                  <th>花色規格</th>
+                  <th>單份用量說明</th>
+                  <th>狀態</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="materials-list-tbody">
+                <tr><td colspan="7" style="text-align:center; color:#94a3b8;">載入原物料清單中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
 
     </div>
@@ -1064,6 +1148,15 @@
     }
 
     function checkAuthSession() {
+      // 讀取記住的公司工號
+      const savedEmpNo = localStorage.getItem("diy_saved_empno");
+      const loginEmpInput = document.getElementById("login-empno");
+      const rememberChk = document.getElementById("remember-empno");
+      if (savedEmpNo && loginEmpInput) {
+        loginEmpInput.value = savedEmpNo;
+        if (rememberChk) rememberChk.checked = true;
+      }
+
       const saved = sessionStorage.getItem("diy_user_session");
       if (saved) {
         try {
@@ -1106,6 +1199,15 @@
           }
           currentUser = res.user;
           sessionStorage.setItem("diy_user_session", JSON.stringify(currentUser));
+
+          // 處理工號記憶
+          const rememberChk = document.getElementById("remember-empno");
+          if (rememberChk && rememberChk.checked) {
+            localStorage.setItem("diy_saved_empno", empNo);
+          } else {
+            localStorage.removeItem("diy_saved_empno");
+          }
+
           renderAppForUser();
         })
         .withFailureHandler(function(err) {
@@ -1275,6 +1377,7 @@
         const b = document.getElementById("tab-btn-bom");
         if (b) b.classList.add("active");
         loadBOMManagement();
+        loadMaterialsList();
       }
     }
 
@@ -1835,10 +1938,24 @@
         "手能生巧", "旁敲側擊A", "旁敲側擊B", "旁敲側擊C", "旁敲側擊D", "旁敲側擊E", "旁敲側擊F",
         "繪聲繪影A", "繪聲繪影B", "繪聲繪影C_胖胖盒", "繪聲繪影C_TB200", "繪聲繪影C_TB9", "請多紙膠A"
       ];
+      const masterMaterials = (cachedBOMData && cachedBOMData.masterMaterials) ? cachedBOMData.masterMaterials : [];
 
-      const optionsHtml = cats.map(c => `
-        <option value="${c}" ${c === selectedCategory ? 'selected' : ''}>${c}</option>
-      `).join("");
+      let optionsHtml = '<optgroup label="📦 材料種類代碼 (總量池群組)">';
+      cats.forEach(c => {
+        optionsHtml += `<option value="${c}" ${c === selectedCategory ? 'selected' : ''}>${c}</option>`;
+      });
+      optionsHtml += '</optgroup>';
+
+      if (masterMaterials.length > 0) {
+        optionsHtml += '<optgroup label="🔩 具體材料品號 (直屬 ERP 貨號品名)">';
+        masterMaterials.forEach(m => {
+          // 選取值優先保留其材料分類代碼，若無分類則以品號代替
+          const val = m.category || m.itemCode;
+          const label = `${m.itemCode} - ${m.itemName} (${m.category})`;
+          optionsHtml += `<option value="${val}" ${selectedCategory === val ? 'selected' : ''}>${label}</option>`;
+        });
+        optionsHtml += '</optgroup>';
+      }
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -1922,16 +2039,189 @@
         .api_deleteProduct(productId);
     }
 
+    // ==================== 原物料品號管理 (建立新材料/貨號品名) ====================
+    let cachedMaterialsList = [];
+
+    function loadMaterialsList() {
+      const tbody = document.getElementById("materials-list-tbody");
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8;">載入原物料清單中...</td></tr>';
+      }
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            console.error("載入原物料失敗: " + res.message);
+            return;
+          }
+          cachedMaterialsList = res.materials || [];
+          renderMaterialsList(cachedMaterialsList);
+          updateCategoryDatalist(res.categories || []);
+        })
+        .withFailureHandler(function(err) {
+          console.error("載入原物料失敗: " + err);
+        })
+        .api_getAllMaterials();
+    }
+
+    function updateCategoryDatalist(categories) {
+      const datalist = document.getElementById("mat-category-datalist");
+      if (!datalist) return;
+      datalist.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join("");
+    }
+
+    function renderMaterialsList(materials) {
+      const tbody = document.getElementById("materials-list-tbody");
+      if (!tbody) return;
+
+      if (!materials || materials.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:16px;">目前尚無原物料資料</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = materials.map(m => {
+        const isInactive = (m.status === "停用");
+        return `
+          <tr style="${isInactive ? 'opacity: 0.5; background: #f8fafc;' : ''}">
+            <td><strong>${m.itemCode}</strong></td>
+            <td>${m.itemName}</td>
+            <td><span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:12px; font-weight:600;">${m.category}</span></td>
+            <td>${m.color || '-'}</td>
+            <td style="font-size:12px; color:#64748b;">${m.note || '-'}</td>
+            <td>
+              <span class="status-badge ${isInactive ? 'RED' : 'GREEN'}" style="font-size:11px;">
+                ${m.status || '啟用'}
+              </span>
+            </td>
+            <td>
+              <div style="display:flex; gap:4px;">
+                <button class="btn btn-outline btn-sm" onclick="openEditMaterialModal('${m.itemCode}')">
+                  ✏️ 編輯
+                </button>
+                <button class="btn ${isInactive ? 'btn-success' : 'btn-danger'} btn-sm" onclick="toggleMaterialStatus('${m.itemCode}', '${m.status}')">
+                  ${isInactive ? '啟用' : '停用'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function openNewMaterialModal() {
+      document.getElementById("mat-modal-title").innerText = "➕ 建立新原物料品號 (貨號品名)";
+      const codeInput = document.getElementById("mat-input-code");
+      codeInput.value = "";
+      codeInput.disabled = false;
+      document.getElementById("mat-input-name").value = "";
+      document.getElementById("mat-input-category").value = "";
+      document.getElementById("mat-input-color").value = "";
+      document.getElementById("mat-input-note").value = "";
+      document.getElementById("modal-material-editor").style.display = "flex";
+    }
+
+    function openEditMaterialModal(itemCode) {
+      const mat = cachedMaterialsList.find(m => m.itemCode === itemCode);
+      if (!mat) return;
+
+      document.getElementById("mat-modal-title").innerText = `✏️ 編輯原物料【${mat.itemName}】`;
+      const codeInput = document.getElementById("mat-input-code");
+      codeInput.value = mat.itemCode;
+      codeInput.disabled = true; // 既有材料不可改品號
+      document.getElementById("mat-input-name").value = mat.itemName;
+      document.getElementById("mat-input-category").value = mat.category || "";
+      document.getElementById("mat-input-color").value = mat.color || "";
+      document.getElementById("mat-input-note").value = mat.note || "";
+      document.getElementById("modal-material-editor").style.display = "flex";
+    }
+
+    function closeMaterialModal() {
+      document.getElementById("modal-material-editor").style.display = "none";
+    }
+
+    function submitSaveMaterial() {
+      const code = document.getElementById("mat-input-code").value.trim();
+      const name = document.getElementById("mat-input-name").value.trim();
+      const cat = document.getElementById("mat-input-category").value.trim();
+      const color = document.getElementById("mat-input-color").value.trim();
+      const note = document.getElementById("mat-input-note").value.trim();
+
+      if (!code || !name || !cat) {
+        alert("材料品號 (貨號)、品名與材料種類代碼為必填項目！");
+        return;
+      }
+
+      showLoading(true, "儲存材料主檔中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            closeMaterialModal();
+            loadMaterialsList();
+            loadBOMManagement(); // 同步更新 BOM 下拉選單中之材料
+            loadDashboard(); // 同步更新庫管抽盤與採購下拉選單
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("儲存材料失敗: " + err);
+        })
+        .api_saveMaterial({
+          itemCode: code,
+          itemName: name,
+          category: cat,
+          color: color,
+          note: note
+        });
+    }
+
+    function toggleMaterialStatus(itemCode, currentStatus) {
+      if (currentStatus === "停用") {
+        const mat = cachedMaterialsList.find(m => m.itemCode === itemCode);
+        if (!mat) return;
+        showLoading(true, "重新啟用原物料中...");
+        google.script.run
+          .withSuccessHandler(function(res) {
+            showLoading(false);
+            alert(res.message);
+            loadMaterialsList();
+            loadBOMManagement();
+            loadDashboard();
+          })
+          .withFailureHandler(function(err) {
+            showLoading(false);
+            alert("啟用失敗: " + err);
+          })
+          .api_saveMaterial(mat);
+      } else {
+        if (!confirm(`確定要停用原物料 [${itemCode}] 嗎？`)) return;
+        showLoading(true, "停用原物料中...");
+        google.script.run
+          .withSuccessHandler(function(res) {
+            showLoading(false);
+            alert(res.message);
+            loadMaterialsList();
+            loadBOMManagement();
+            loadDashboard();
+          })
+          .withFailureHandler(function(err) {
+            showLoading(false);
+            alert("停用失敗: " + err);
+          })
+          .api_deleteMaterial(itemCode);
+      }
+    }
+
     function renderMaterialSelect(materials) {
       const ccSelect = document.getElementById("cc-item-code");
       const poSelect = document.getElementById("po-item-code");
-      if (!materials || ccSelect.options.length > 0) return;
+      if (!materials) return;
       
       const opts = materials.map(m => `
         <option value="${m.itemCode}">${m.itemName} (${m.itemCode})</option>
       `).join("");
 
-      ccSelect.innerHTML = opts;
+      if (ccSelect) ccSelect.innerHTML = opts;
       if (poSelect) poSelect.innerHTML = opts;
     }
 
