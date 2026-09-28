@@ -701,6 +701,176 @@ function test_Phase11_DateProjectionAndTriTrackInventory() {
   return results;
 }
 
+/**
+ * 階段十二自動化測試：驗證跨日推移預約扣除累計(Bug 1)、預約修改與刪除(需求2)、缺口提醒不建單(需求3)、進貨單匯入需求日+20天(需求4)、到貨入庫併入庫存(需求5)、在庫到貨提醒(需求6)
+ */
+function test_Phase12_ComprehensiveUpgrades() {
+  const ss = getSpreadsheet();
+  const results = {
+    testName: "階段十二測試：6大核心功能升級與跨日累計推移檢驗",
+    timestamp: new Date().toISOString(),
+    passed: true,
+    details: []
+  };
+
+  function assert(condition, description) {
+    results.details.push({
+      item: description,
+      status: condition ? "PASS" : "FAIL"
+    });
+    if (!condition) {
+      results.passed = false;
+    }
+  }
+
+  // 1. 驗證 Bug #1：跨日累計扣除 (9/29 預約 38 套，9/30 查詢需扣除 38 套)
+  const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
+  const testBkNo = "BK-TEST-P12-001";
+  
+  // 建立一筆 2026/09/29 請多紙膠 38 套的測試預約
+  bkSheet.appendRow([
+    testBkNo,
+    "2026/09/29",
+    "請多紙膠",
+    38,
+    "自動測試團體",
+    "0900-000-000",
+    "2026/09/28 12:00:00",
+    "GREEN",
+    "無須採購 (庫存充裕)",
+    "Phase 12 跨日累計扣除單元測試"
+  ]);
+
+  // 查詢 2026/09/30 之推移預估
+  const proj930 = api_getProjectionByDate("2026/09/30");
+  assert(proj930.success === true, "api_getProjectionByDate 查詢 2026/09/30 成功 (PASS)");
+  
+  // 檢查「請多紙膠」在 9/30 的 bookedQty 是否包含 9/29 的 38 套
+  const tapeCap = proj930.capacities["6"];
+  assert(tapeCap && tapeCap.bookedQty >= 38, `2026/09/30 推移已累計扣除 9/29 的已預約套數 (已扣: ${tapeCap ? tapeCap.bookedQty : 0} >= 38) (PASS)`);
+
+  // 2. 驗證需求 2：修改已存在之預約單 (updateBookingRecord)
+  const updateRes = api_updateBooking({
+    bookingNo: testBkNo,
+    eventDate: "2026/09/29",
+    qty: 45, // 修改套數為 45
+    productName: "請多紙膠",
+    groupName: "自動測試修改團體",
+    phone: "0911-111-111",
+    note: "測試修改成功"
+  });
+  assert(updateRes.success === true, "api_updateBooking 成功修改既有預約單套數與備註 (PASS)");
+
+  // 再次檢查推移是否即時反映修改後的 45 套
+  const projAfterUpdate = api_getProjectionByDate("2026/09/30");
+  const tapeCapUpdated = projAfterUpdate.capacities["6"];
+  assert(tapeCapUpdated && tapeCapUpdated.bookedQty >= 45, `預約修改為 45 套後，推移即時感測更新 (已扣: ${tapeCapUpdated ? tapeCapUpdated.bookedQty : 0} >= 45) (PASS)`);
+
+  // 3. 驗證需求 3：黃燈缺口時不自動生成採購單，改為缺口提醒
+  const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
+  const poCountBefore = poSheet.getLastRow();
+  
+  // 送出一筆 20 天後超額預約 (手能生巧 9999 套，觸發黃燈需叫貨)
+  const future20 = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000);
+  const future20Str = Utilities.formatDate(future20, "Asia/Taipei", "yyyy/MM/dd");
+  const submitYellowRes = submitBookingRecord(future20Str, "1", 9999, "超額測試團", "0922-222-222", "測試不自動建單", "BK-TEST-YELLOW-999");
+  
+  assert(submitYellowRes.success === true, "黃燈超額預約允許送單登記 (PASS)");
+  assert(submitYellowRes.poNumber === "", "黃燈送單確認不再自動建立採購單 (poNumber 為空) (PASS)");
+  const poCountAfter = poSheet.getLastRow();
+  assert(poCountAfter === poCountBefore, "在途採購清冊筆數未增加，符合不自動建 PO 需求 (PASS)");
+
+  // 清除此測試黃燈預約
+  api_deleteBooking("BK-TEST-YELLOW-999");
+
+  // 4. 驗證需求 4：PURI 進貨單匯入，自動換算 需求日 + 20 天為補貨日
+  const testReqNo = "PR-TEST-260828";
+  const samplePURIList = [
+    {
+      reqNo: testReqNo,
+      itemCode: "5D3000002",
+      itemName: "mt 紙膠帶7mm",
+      qty: 200,
+      reqDate: "2026/08/28",
+      note: "PURI測試單"
+    }
+  ];
+
+  const puriRes = api_importProcurementPURI(samplePURIList);
+  assert(puriRes.success === true, "api_importProcurementPURI 匯入進貨單成功 (PASS)");
+
+  // 檢查採購清冊中是否正確寫入且到貨日為 2026/09/17 (2026/08/28 + 20天)
+  const poListRes = api_getProcurementList();
+  assert(poListRes.success === true, "api_getProcurementList 讀取採購清冊成功 (PASS)");
+  const matchedPURI = poListRes.procurements.find(p => p.poNumber === testReqNo);
+  assert(matchedPURI !== undefined, `採購清冊成功找到請購單 [${testReqNo}] (PASS)`);
+  if (matchedPURI) {
+    assert(matchedPURI.demandDate === "2026/08/28", `需求日期正確記錄為 2026/08/28 (PASS)`);
+    assert(matchedPURI.replenishmentDate === "2026/09/17", `補貨日精確計算為需求日+20天: ${matchedPURI.replenishmentDate} (PASS)`);
+  }
+
+  // 5. 驗證需求 5：標記到貨入庫後，數量立即加入庫存中
+  // 記錄核銷前之有效庫存
+  const invBefore = getEffectiveInventory();
+  const tapeMatBefore = invBefore.find(m => m.itemCode === "5D3000002");
+  const qtyBeforeArrival = tapeMatBefore ? tapeMatBefore.effectiveQty : 0;
+
+  // 標記到貨核銷
+  const receiveRes = api_markProcurementReceived(testReqNo);
+  assert(receiveRes.success === true, "api_markProcurementReceived 標記到貨入庫成功 (PASS)");
+
+  // 檢查核銷後之有效庫存是否增加 200
+  const invAfter = getEffectiveInventory();
+  const tapeMatAfter = invAfter.find(m => m.itemCode === "5D3000002");
+  const qtyAfterArrival = tapeMatAfter ? tapeMatAfter.effectiveQty : 0;
+  assert(qtyAfterArrival === qtyBeforeArrival + 200, `到貨入庫後，材料生效庫存立即累加 +200 捲 (前: ${qtyBeforeArrival} ➔ 後: ${qtyAfterArrival}) (PASS)`);
+
+  // 6. 驗證需求 6：在途未到貨時，庫存顯示預計到貨提醒
+  // 新增一筆未到貨在途採購
+  const testInTransitNo = "PO-TRANSIT-TEST-001";
+  api_importProcurementPURI([
+    {
+      reqNo: testInTransitNo,
+      itemCode: "21PIFBXX000001",
+      itemName: "短栓",
+      qty: 600,
+      reqDate: "2026/10/01",
+      note: "在途提醒測試"
+    }
+  ]);
+  const projForTransit = api_getProjectionByDate("2026/10/25");
+  const basketCap = projForTransit.capacities["5"];
+  assert(basketCap && basketCap.incomingNotices && basketCap.incomingNotices.length > 0, "折疊籃方案成功感測並提供在途補貨到貨提醒 notices (PASS)");
+
+  // 清理測試資料
+  api_deleteBooking(testBkNo);
+  const finalCleanLast = poSheet.getLastRow();
+  if (finalCleanLast > 1) {
+    const poVals = poSheet.getRange(2, 1, finalCleanLast - 1, 1).getValues();
+    for (let i = poVals.length - 1; i >= 0; i--) {
+      const pNo = String(poVals[i][0]);
+      if (pNo === testReqNo || pNo === testInTransitNo) {
+        poSheet.deleteRow(i + 2);
+      }
+    }
+  }
+  generate45DaysProjection();
+
+  // UI 彈窗回報
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const statusIcon = results.passed ? "✅" : "❌";
+    const detailMsg = results.details.map(d => `${d.status === "PASS" ? "✔️" : "✖️"} ${d.item}`).join("\n");
+    ui.alert(
+      `${statusIcon} ${results.testName}`,
+      `測試狀態: ${results.passed ? "全部通過 (SUCCESS)" : "存在失敗項目"}\n\n檢驗細項:\n${detailMsg}`,
+      ui.ButtonSet.OK
+    );
+  } catch (e) {}
+
+  return results;
+}
+
 // 注意：doGet 入口唯一定義在 05_API.js，此處不重複定義以避免函式衝突
 
 

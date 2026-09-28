@@ -170,24 +170,81 @@ function getEffectiveInventory() {
     });
   }
 
-  // 3. 雙軌融合：對齊材料主檔 (支援動態新材料與預設物料)
-  const masterMaterials = (typeof getDynamicMasterMaterials === "function") 
+  // 3. 取得在途採購清冊中「已到貨入庫」之採購數量 (加入生效庫存)，以及「未完成到貨」在途補貨品項
+  const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
+  const poLastRow = poSheet ? poSheet.getLastRow() : 0;
+  const arrivedQtyMap = {}; // itemCode -> totalArrivedQty
+  const inTransitMap = {}; // itemCode -> [ { poNumber, arrivalDate, qty, itemName } ]
+
+  if (poLastRow > 1) {
+    const poData = poSheet.getRange(2, 1, poLastRow - 1, 9).getValues();
+    poData.forEach(row => {
+      const poNo = String(row[0] || "").trim();
+      const arrivalDateVal = row[2];
+      let arrivalDateStr = "";
+      if (arrivalDateVal instanceof Date) {
+        arrivalDateStr = Utilities.formatDate(arrivalDateVal, "Asia/Taipei", "yyyy/MM/dd");
+      } else {
+        arrivalDateStr = String(arrivalDateVal || "").trim().substring(0, 10).replace(/-/g, "/");
+      }
+      const itemCode = String(row[3] || "").trim();
+      const itemName = String(row[4] || "").trim();
+      const qty = Number(row[5]) || 0;
+      const status = String(row[6] || "").trim();
+      const note = String(row[8] || "").trim();
+
+      if (status === "已到貨入庫") {
+        arrivedQtyMap[itemCode] = (arrivedQtyMap[itemCode] || 0) + qty;
+      } else if (status !== "已取消" && qty > 0) {
+        if (!inTransitMap[itemCode]) inTransitMap[itemCode] = [];
+        inTransitMap[itemCode].push({
+          poNumber: poNo,
+          arrivalDate: arrivalDateStr,
+          qty: qty,
+          itemName: itemName,
+          note: note
+        });
+      }
+    });
+  }
+
+  // 4. 多軌融合：對齊材料主檔 (支援動態新材料、預設物料與採購新料)
+  const baseMasterMaterials = (typeof getDynamicMasterMaterials === "function") 
     ? getDynamicMasterMaterials() 
     : CONFIG.MASTER_MATERIALS;
+
+  const masterCodes = new Set(baseMasterMaterials.map(m => m.itemCode));
+  const masterMaterials = [...baseMasterMaterials];
+
+  // 若採購清冊中有到貨入庫或在途之新品項尚未建主檔，自動相容納入清單
+  Object.keys(arrivedQtyMap).concat(Object.keys(inTransitMap)).forEach(code => {
+    if (code && !masterCodes.has(code)) {
+      masterCodes.add(code);
+      masterMaterials.push({
+        itemCode: code,
+        itemName: code,
+        category: "進貨物料",
+        color: "通用"
+      });
+    }
+  });
 
   const effectiveList = masterMaterials.map(mat => {
     const erpItem = erpMap[mat.itemCode];
     const erpQty = erpItem ? Number(erpItem.qty) : 0;
     const countItem = todayCycleCountMap[mat.itemCode];
+    const arrivedQty = arrivedQtyMap[mat.itemCode] || 0;
+    const incomingList = inTransitMap[mat.itemCode] || [];
 
-    let effectiveQty = erpQty;
-    let source = "未更動 (ERP帳面兜底)";
+    // 若今日無盤點，生效庫存 = ERP 帳面數 + 採購已到貨入庫數
+    let effectiveQty = erpQty + arrivedQty;
+    let source = arrivedQty > 0 ? `ERP帳面(${erpQty}) + 到貨入庫(${arrivedQty})` : "未更動 (ERP帳面兜底)";
     let diff = 0;
     let hasCountToday = false;
     let cycleCountQty = null;
 
     if (countItem) {
-      effectiveQty = countItem.actualQty;
+      effectiveQty = countItem.actualQty; // 現場盤點實數具最高優先權
       cycleCountQty = countItem.actualQty;
       source = "現場實盤優先";
       diff = countItem.diff;
@@ -201,14 +258,53 @@ function getEffectiveInventory() {
       color: mat.color,
       effectiveQty: Math.max(0, effectiveQty), // 庫存非負防呆
       erpQty: erpQty,
+      arrivedQty: arrivedQty,
       cycleCountQty: cycleCountQty,
       hasCountToday: hasCountToday,
       diff: diff,
-      source: source
+      source: source,
+      incomingSupplies: incomingList // 在途未到貨補貨明細 (供業務端到貨提醒使用)
     };
   });
 
   return effectiveList;
+}
+
+/**
+ * 取得所有未到貨在途採購清冊
+ */
+function getInTransitProcurements() {
+  const ss = getSpreadsheet();
+  const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
+  const poLastRow = poSheet ? poSheet.getLastRow() : 0;
+  const list = [];
+
+  if (poLastRow > 1) {
+    const poData = poSheet.getRange(2, 1, poLastRow - 1, 9).getValues();
+    poData.forEach((row, idx) => {
+      const status = String(row[6] || "").trim();
+      if (status !== "已到貨入庫" && status !== "已取消") {
+        let arrDate = "";
+        if (row[2] instanceof Date) {
+          arrDate = Utilities.formatDate(row[2], "Asia/Taipei", "yyyy/MM/dd");
+        } else {
+          arrDate = String(row[2] || "").trim().substring(0, 10).replace(/-/g, "/");
+        }
+        list.push({
+          rowIndex: idx + 2,
+          poNumber: String(row[0] || "").trim(),
+          orderDate: String(row[1] || "").trim(),
+          arrivalDate: arrDate,
+          itemCode: String(row[3] || "").trim(),
+          itemName: String(row[4] || "").trim(),
+          qty: Number(row[5]) || 0,
+          status: status,
+          note: String(row[8] || "").trim()
+        });
+      }
+    });
+  }
+  return list;
 }
 
 /**

@@ -28,13 +28,14 @@ function calculateProductCapacities(inventoryList) {
     return items.reduce((sum, it) => sum + (Number(it.effectiveQty) || 0), 0);
   }
 
-  // 輔助函式：取得某材料種類的完整庫存統計 (生效在庫、ERP帳面數、現場盤點數)
+  // 輔助函式：取得某材料種類的完整庫存統計 (生效在庫、ERP帳面數、現場盤點數、在途未到貨補貨)
   function getCategoryStats(category) {
     const items = catMap[category] || [];
     let effectiveSum = 0;
     let erpSum = 0;
     let cycleCountSum = 0;
     let hasCount = false;
+    let incomingList = [];
 
     items.forEach(it => {
       effectiveSum += (Number(it.effectiveQty) || 0);
@@ -42,6 +43,9 @@ function calculateProductCapacities(inventoryList) {
       if (it.hasCountToday) {
         hasCount = true;
         cycleCountSum += (Number(it.cycleCountQty !== undefined && it.cycleCountQty !== null ? it.cycleCountQty : it.effectiveQty) || 0);
+      }
+      if (it.incomingSupplies && Array.isArray(it.incomingSupplies)) {
+        incomingList = incomingList.concat(it.incomingSupplies);
       }
     });
 
@@ -51,7 +55,8 @@ function calculateProductCapacities(inventoryList) {
       erpTotal: erpSum,
       hasCycleCount: hasCount,
       cycleCountTotal: hasCount ? cycleCountSum : null,
-      source: hasCount ? "現場實盤優先" : "未更動 (沿用系統)"
+      source: hasCount ? "現場實盤優先" : "未更動 (沿用系統)",
+      incomingSupplies: incomingList
     };
   }
 
@@ -85,6 +90,7 @@ function calculateProductCapacities(inventoryList) {
     const hasCount = isObj ? !!statsOrPool.hasCycleCount : false;
     const cycleCountQty = (isObj && hasCount) ? statsOrPool.cycleCountTotal : null;
     const source = isObj ? statsOrPool.source : "系統數字";
+    const incomingSupplies = (isObj && statsOrPool.incomingSupplies) ? statsOrPool.incomingSupplies : [];
 
     return {
       name: name,
@@ -97,7 +103,8 @@ function calculateProductCapacities(inventoryList) {
       possibleUnits: poss,
       isBottleneck: isBtl,
       suggestedAction: action,
-      statusClass: statusClass
+      statusClass: statusClass,
+      incomingSupplies: incomingSupplies
     };
   }
 

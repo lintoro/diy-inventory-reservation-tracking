@@ -6,6 +6,24 @@
  * Web App 入口函式
  */
 function doGet(e) {
+  if (e && e.parameter && e.parameter.action) {
+    const action = e.parameter.action;
+    let res = { success: false, message: "未知 action" };
+    if (action === "test_Phase12") {
+      res = test_Phase12_ComprehensiveUpgrades();
+    } else if (action === "api_getDashboardOverview") {
+      res = api_getDashboardOverview();
+    } else if (action === "api_getProjectionByDate") {
+      res = api_getProjectionByDate(e.parameter.date || "2026/09/30");
+    } else if (action === "api_getBookingList") {
+      res = api_getBookingList();
+    } else if (action === "api_getProcurementList") {
+      res = api_getProcurementList();
+    }
+    return ContentService.createTextOutput(JSON.stringify(res))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   const template = HtmlService.createTemplateFromFile("index");
   return template.evaluate()
     .setTitle("DIY_物料庫存與預約接單管理系統")
@@ -186,17 +204,18 @@ function api_getProjectionByDate(targetDateStr) {
     const capacities = calculateProductCapacities();
     const dayCaps = {};
     
-    // 檢查該活動日已預約總套數 (扣除測試資料)
+    // 檢查該活動日及之前已預約總套數 (累計扣除，推移正確反映物料消耗)
     const ss = getSpreadsheet();
     const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
     const bkLastRow = bkSheet.getLastRow();
-    const bookingsOnDate = {}; // productId -> bookedQty
+    const bookingsOnDate = {}; // productName -> bookedQty
 
     if (bkLastRow > 1) {
       const bkRows = bkSheet.getRange(2, 1, bkLastRow - 1, 5).getValues();
       bkRows.forEach(r => {
-        let bDateStr = r[1] instanceof Date ? Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd") : String(r[1]);
-        if (bDateStr === normalizedDateStr) {
+        let bDateStr = r[1] instanceof Date ? Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd") : String(r[1]).substring(0, 10).replace(/-/g, "/");
+        // 修正 Bug #1：累計所有活動日 <= normalizedDateStr 的預約套數
+        if (bDateStr <= normalizedDateStr) {
           const prodName = String(r[2]);
           bookingsOnDate[prodName] = (bookingsOnDate[prodName] || 0) + (Number(r[3]) || 0);
         }
@@ -213,6 +232,19 @@ function api_getProjectionByDate(targetDateStr) {
       const p = capacities[id];
       const booked = bookingsOnDate[p.productName] || 0;
       const netQty = Math.max(0, p.maxCapacity - floor - booked);
+
+      // 彙整該方案相關零件之未到貨補貨明細 (供業務端到貨提醒)
+      let incomingNotices = [];
+      if (p.partsDetail && Array.isArray(p.partsDetail)) {
+        p.partsDetail.forEach(part => {
+          if (part.incomingSupplies && part.incomingSupplies.length > 0) {
+            part.incomingSupplies.forEach(inc => {
+              incomingNotices.push(`預計 ${inc.arrivalDate} 補貨到貨 (${inc.itemName} +${inc.qty})`);
+            });
+          }
+        });
+      }
+
       dayCaps[id] = {
         name: p.productName,
         grossCapacity: p.maxCapacity,
@@ -220,7 +252,9 @@ function api_getProjectionByDate(targetDateStr) {
         bookedQty: booked,
         netQty: netQty,
         isOver45Days: isOver45Days,
-        displayStatus: isOver45Days ? "皆可預訂" : `${netQty} 套`
+        displayStatus: isOver45Days ? "皆可預訂" : `${netQty} 套`,
+        incomingNotices: incomingNotices,
+        incomingNoticeText: incomingNotices.length > 0 ? incomingNotices[0] : ""
       };
     });
 
@@ -349,9 +383,13 @@ function api_markProcurementReceived(poNumber) {
       if (String(data[i][0]).trim() === cleanPo) {
         const rowIndex = i + 2;
         poSheet.getRange(rowIndex, 7).setValue("已到貨入庫");
+        
+        // 到貨後立即動態重新整理 45 天推移表 (物料庫存自動累加生效)
+        generate45DaysProjection();
+
         return {
           success: true,
-          message: `採購單 [${cleanPo}] 已成功核銷並標記為【已到貨入庫】！`
+          message: `採購/請購單 [${cleanPo}] 已成功核銷為【已到貨入庫】，採購數量已即時併入有效庫存！`
         };
       }
     }
@@ -359,87 +397,6 @@ function api_markProcurementReceived(poNumber) {
     return { success: false, message: `找不到採購單號 [${cleanPo}]` };
   } catch (err) {
     return { success: false, message: "到貨核銷失敗: " + err.message };
-  }
-}
-
-/**
- * API: 批次新增多筆採購單 (單據上傳/表格直接輸入)
- * @param {Array<Object>} ordersList [ { itemCode, qty, arrivalDate, poNumber, note } ]
- */
-function api_batchCreateProcurementOrders(ordersList) {
-  try {
-    if (!ordersList || !Array.isArray(ordersList) || ordersList.length === 0) {
-      return { success: false, message: "上傳或輸入的單據內容為空" };
-    }
-
-    const ss = getSpreadsheet();
-    const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
-    const now = new Date();
-    const nowStr = Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd");
-    const dateCompact = Utilities.formatDate(now, "Asia/Taipei", "yyyyMMdd");
-    let currentLastRow = poSheet.getLastRow();
-
-    const validRows = [];
-    let counter = 1;
-
-    ordersList.forEach(item => {
-      const itemCode = String(item.itemCode || "").trim();
-      const qty = Number(item.qty) || 0;
-      if (!itemCode || qty <= 0) return;
-
-      const arrivalDateStr = String(item.arrivalDate || "").trim();
-      let poNo = String(item.poNumber || "").trim();
-      if (!poNo) {
-        poNo = `PO-${dateCompact}-${String(currentLastRow + counter).padStart(3, "0")}`;
-        counter++;
-      }
-
-      // 查詢品名
-      const mat = CONFIG.MASTER_MATERIALS.find(m => m.itemCode === itemCode);
-      let itemName = mat ? `${mat.itemName} (${mat.category})` : itemCode;
-      if (item.itemName && !mat) {
-        itemName = String(item.itemName);
-      }
-
-      // 計算最晚下單日
-      let deadlineStr = nowStr;
-      if (arrivalDateStr) {
-        const arrD = new Date(arrivalDateStr.replace(/-/g, "/"));
-        if (!isNaN(arrD.getTime())) {
-          const deadD = new Date(arrD.getTime() - (CONFIG.LEAD_TIME_DAYS * 24 * 60 * 60 * 1000));
-          deadlineStr = Utilities.formatDate(deadD, "Asia/Taipei", "yyyy/MM/dd");
-        }
-      }
-
-      validRows.push([
-        poNo,
-        nowStr,
-        deadlineStr,
-        itemCode,
-        itemName,
-        qty,
-        "已下單在途",
-        "批量單據匯入",
-        String(item.note || "")
-      ]);
-    });
-
-    if (validRows.length === 0) {
-      return { success: false, message: "單據中沒有符合條件的有效採購明細 (品號與數量需大於0)" };
-    }
-
-    poSheet.getRange(currentLastRow + 1, 1, validRows.length, 9).setValues(validRows);
-
-    // 重新運算推移
-    generate45DaysProjection();
-
-    return {
-      success: true,
-      count: validRows.length,
-      message: `成功批量登錄 ${validRows.length} 筆在途採購明細，並已自動同步 45 天推移預估！`
-    };
-  } catch (err) {
-    return { success: false, message: "批量登錄採購單失敗: " + err.message };
   }
 }
 
@@ -470,16 +427,192 @@ function api_batchMarkProcurementReceived(poNumberList) {
       }
     }
 
-    // 重新計算推移
+    // 重新計算推移與庫存融合
     generate45DaysProjection();
 
     return {
       success: true,
       count: updatedCount,
-      message: `成功將 ${updatedCount} 筆採購單標記為【已到貨入庫】！`
+      message: `成功將 ${updatedCount} 筆單據標記為【已到貨入庫】，物料庫存已自動累加！`
     };
   } catch (err) {
     return { success: false, message: "批次到貨核銷失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 匯入 PURI05 進貨單 (支援請購單號、品號、品名、請購數量、需求日期，自動 +20 天為補貨日)
+ * @param {Array<Object>} ordersList [ { reqNo, itemCode, itemName, qty, reqDate, note } ]
+ */
+function api_importProcurementPURI(ordersList) {
+  try {
+    if (!ordersList || !Array.isArray(ordersList) || ordersList.length === 0) {
+      return { success: false, message: "上傳或輸入的進貨單明細為空" };
+    }
+
+    const ss = getSpreadsheet();
+    const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
+    const now = new Date();
+    const nowStr = Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd");
+    const dateCompact = Utilities.formatDate(now, "Asia/Taipei", "yyyyMMdd");
+    let currentLastRow = poSheet.getLastRow();
+
+    const validRows = [];
+    let counter = 1;
+
+    ordersList.forEach(item => {
+      const itemCode = String(item.itemCode || "").trim();
+      const qty = Number(item.qty) || 0;
+      if (!itemCode || qty <= 0) return;
+
+      // 請購單號
+      let poNo = String(item.reqNo || item.poNumber || "").trim();
+      if (!poNo) {
+        poNo = `PR-${dateCompact}-${String(currentLastRow + counter).padStart(3, "0")}`;
+        counter++;
+      }
+
+      // 品名
+      const mat = (typeof getDynamicMasterMaterials === "function" ? getDynamicMasterMaterials() : CONFIG.MASTER_MATERIALS).find(m => m.itemCode === itemCode);
+      let itemName = String(item.itemName || "").trim();
+      if (!itemName && mat) {
+        itemName = `${mat.itemName} (${mat.category})`;
+      } else if (!itemName) {
+        itemName = itemCode;
+      }
+
+      // 需求日期與補貨日計算 (需求日期 + 20 天)
+      let reqDateStr = String(item.reqDate || item.demandDate || nowStr).trim().substring(0, 10).replace(/-/g, "/");
+      let reqDateObj = new Date(reqDateStr);
+      if (isNaN(reqDateObj.getTime())) {
+        reqDateObj = new Date();
+        reqDateStr = Utilities.formatDate(reqDateObj, "Asia/Taipei", "yyyy/MM/dd");
+      }
+
+      // 關鍵規則：補貨日 = 需求日期 + 20 天
+      const replenishmentDate = new Date(reqDateObj.getTime() + (20 * 24 * 60 * 60 * 1000));
+      const arrivalDateStr = Utilities.formatDate(replenishmentDate, "Asia/Taipei", "yyyy/MM/dd");
+
+      validRows.push([
+        poNo,
+        reqDateStr,       // 需求日期
+        arrivalDateStr,   // 預訂進貨日期 (補貨日 = 需求日 + 20天)
+        itemCode,
+        itemName,
+        qty,
+        "已請購在途",     // 狀態
+        poNo,             // 關聯請購單號
+        String(item.note || "進貨單PURI匯入 (補貨日=需求日+20天)")
+      ]);
+    });
+
+    if (validRows.length === 0) {
+      return { success: false, message: "進貨單中未找到大於 0 的有效品項資料！" };
+    }
+
+    poSheet.getRange(currentLastRow + 1, 1, validRows.length, 9).setValues(validRows);
+
+    // 重新運算推移
+    generate45DaysProjection();
+
+    return {
+      success: true,
+      count: validRows.length,
+      message: `成功匯入 ${validRows.length} 筆進貨單品項至採購清冊！已自動計算補貨日 (需求日 + 20天)。`
+    };
+  } catch (err) {
+    return { success: false, message: "進貨單匯入失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 取得所有採購清冊清單 (支援請購單號、補貨日、狀態與勾選到貨)
+ */
+function api_getProcurementList() {
+  try {
+    const ss = getSpreadsheet();
+    const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
+    const lastRow = poSheet ? poSheet.getLastRow() : 0;
+    const list = [];
+
+    if (lastRow > 1) {
+      const data = poSheet.getRange(2, 1, lastRow - 1, 9).getValues();
+      data.forEach((row, idx) => {
+        let reqDate = "";
+        if (row[1] instanceof Date) {
+          reqDate = Utilities.formatDate(row[1], "Asia/Taipei", "yyyy/MM/dd");
+        } else {
+          reqDate = String(row[1] || "").trim().substring(0, 10);
+        }
+
+        let arrDate = "";
+        if (row[2] instanceof Date) {
+          arrDate = Utilities.formatDate(row[2], "Asia/Taipei", "yyyy/MM/dd");
+        } else {
+          arrDate = String(row[2] || "").trim().substring(0, 10);
+        }
+
+        list.push({
+          rowIndex: idx + 2,
+          poNumber: String(row[0] || "").trim(),
+          demandDate: reqDate,
+          replenishmentDate: arrDate, // 補貨日
+          itemCode: String(row[3] || "").trim(),
+          itemName: String(row[4] || "").trim(),
+          qty: Number(row[5]) || 0,
+          status: String(row[6] || "").trim(),
+          refNo: String(row[7] || "").trim(),
+          note: String(row[8] || "").trim(),
+          isReceived: (String(row[6] || "").trim() === "已到貨入庫")
+        });
+      });
+    }
+
+    return {
+      success: true,
+      procurements: list.reverse() // 最新建立排在前面
+    };
+  } catch (err) {
+    return { success: false, message: "讀取採購清冊失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 取得業務預約明細清冊 (供編輯與查看)
+ */
+function api_getBookingList() {
+  try {
+    const list = getAllBookingRecords();
+    return {
+      success: true,
+      bookings: list.reverse() // 最新預約排前面
+    };
+  } catch (err) {
+    return { success: false, message: "讀取預約清冊失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 修改既有預約單
+ * @param {Object} data { bookingNo, eventDate, productName, qty, groupName, phone, note }
+ */
+function api_updateBooking(data) {
+  try {
+    return updateBookingRecord(data);
+  } catch (err) {
+    return { success: false, message: "修改預約失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 刪除既有預約單
+ * @param {string} bookingNo 預約單號
+ */
+function api_deleteBooking(bookingNo) {
+  try {
+    return deleteBookingRecord(bookingNo);
+  } catch (err) {
+    return { success: false, message: "刪除預約失敗: " + err.message };
   }
 }
 

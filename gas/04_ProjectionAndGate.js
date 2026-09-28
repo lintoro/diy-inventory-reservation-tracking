@@ -65,7 +65,7 @@ function checkBookingEligibility(eventDate, productId, bookingQty) {
     return { success: false, message: `無效的商品編號: ${productId}` };
   }
 
-  // 讀取該日期已存在的團體預約已扣量
+  // 讀取該日期及之前已存在的團體預約已扣量 (累計扣除，避免跨日超賣)
   const ss = getSpreadsheet();
   const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
   const bkLastRow = bkSheet.getLastRow();
@@ -73,23 +73,24 @@ function checkBookingEligibility(eventDate, productId, bookingQty) {
   
   const targetDateStr = Utilities.formatDate(targetDate, "Asia/Taipei", "yyyy/MM/dd");
   if (bkLastRow > 1) {
-    const bkRows = bkSheet.getRange(2, 1, bkLastRow - 1, 4).getValues();
+    const bkRows = bkSheet.getRange(2, 1, bkLastRow - 1, 10).getValues();
     bkRows.forEach(r => {
       let rDateStr = "";
       if (r[1] instanceof Date) {
         rDateStr = Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd");
       } else {
-        rDateStr = String(r[1] || "").substring(0, 10);
+        rDateStr = String(r[1] || "").substring(0, 10).replace(/-/g, "/");
       }
       const rProdName = String(r[2] || "");
       const rQty = Number(r[3]) || 0;
-      if (rDateStr === targetDateStr && rProdName.includes(prod.productName)) {
+      // 只要活動日 <= 查詢目標日，即代表物料在此日期或之前已被佔用
+      if (rDateStr <= targetDateStr && rProdName.includes(prod.productName)) {
         existingBookedQty += rQty;
       }
     });
   }
 
-  // 可預約上限 = 基礎短板可做套數 - 散客保底 - 已預訂套數
+  // 可預約上限 = 基礎短板可做套數 - 散客保底 - 累計已預訂套數
   const maxAvailableForBooking = Math.max(0, prod.maxCapacity - safetyFloor - existingBookedQty);
   const requestedQty = Number(bookingQty) || 0;
 
@@ -114,7 +115,7 @@ function checkBookingEligibility(eventDate, productId, bookingQty) {
     if (requestedQty > maxAvailableForBooking) {
       light = "RED";
       canBook = false;
-      statusText = `【紅燈禁接】活動日距今僅 ${daysDiff} 天 (<15天不可補貨期)，可接上限鎖定為 ${maxAvailableForBooking} 套 (已扣散客保底 ${safetyFloor} 套與既有預訂 ${existingBookedQty} 套)，禁止超額接單！`;
+      statusText = `【紅燈禁接】活動日距今僅 ${daysDiff} 天 (<15天不可補貨期)，可接上限鎖定為 ${maxAvailableForBooking} 套 (已扣散客保底 ${safetyFloor} 套與累計已預訂 ${existingBookedQty} 套)，禁止超額接單！`;
     } else {
       light = "GREEN";
       statusText = `【綠燈正常】活動日距今 ${daysDiff} 天，目前可用量 ${maxAvailableForBooking} 套充足，可直接接單。`;
@@ -161,7 +162,7 @@ function checkBookingEligibility(eventDate, productId, bookingQty) {
 }
 
 /**
- * 送出預約登記明細，若為黃燈則自動生成採購待辦單
+ * 送出預約登記明細 (不自動生成採購單，改為記錄缺口提醒)
  * @param {string} eventDate 活動日 (如 "2026/10/15")
  * @param {string} productId 商品編號
  * @param {number} bookingQty 套數
@@ -195,7 +196,10 @@ function submitBookingRecord(eventDate, productId, bookingQty, groupName, phone,
     bookingNo = `BK-${dateCompact}-${String(bkCount).padStart(3, "0")}`;
   }
 
-  const procurementStatus = check.procurementNeeded ? "待採購叫貨" : "無須採購";
+  // 缺口提醒狀態 (取代原先的自動叫貨機制)
+  const procurementReminder = check.procurementNeeded 
+    ? `⚠️ 尚缺 ${check.shortageQty} 套 (最晚叫貨: ${check.latestOrderDate})` 
+    : "無須採購 (庫存充裕)";
 
   bkSheet.appendRow([
     bookingNo,
@@ -206,41 +210,151 @@ function submitBookingRecord(eventDate, productId, bookingQty, groupName, phone,
     phone || "",
     nowStr,
     check.light,
-    procurementStatus,
+    procurementReminder,
     note || ""
   ]);
 
-  // 若為黃燈需採購，自動排入 [05_在途採購清冊]
-  let poNumber = "";
-  if (check.procurementNeeded) {
-    const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
-    const poCount = poSheet.getLastRow();
-    poNumber = `PO-${dateCompact}-${String(poCount).padStart(3, "0")}`;
-
-    poSheet.appendRow([
-      poNumber,
-      Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd"),
-      check.latestOrderDate, // 預計最晚下單日
-      `PR-${productId}`,
-      `${check.productName} (缺口補料)`,
-      check.shortageQty,
-      "待主管叫貨",
-      bookingNo,
-      `源自預約 ${bookingNo}，活動日 ${check.eventDate}，最晚下單日: ${check.latestOrderDate}`
-    ]);
-  }
-
-  // 預約完成後動態更新 45 天推移表
+  // 重新刷新推移預估
   generate45DaysProjection();
+
+  let finalMessage = check.statusText;
+  if (check.procurementNeeded) {
+    finalMessage = `預約單 [${bookingNo}] 建立成功！⚠️【缺口提醒】活動日 ${check.eventDate} 庫存尚缺 ${check.shortageQty} 套，請通知主管手動叫貨 (最晚下單日：${check.latestOrderDate})！`;
+  }
 
   return {
     success: true,
     bookingNo: bookingNo,
-    poNumber: poNumber,
+    poNumber: "",
     light: check.light,
-    message: check.statusText,
+    message: finalMessage,
     checkResult: check
   };
+}
+
+/**
+ * 取得所有預約登記明細清冊
+ */
+function getAllBookingRecords() {
+  const ss = getSpreadsheet();
+  const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
+  const lastRow = bkSheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  const rows = bkSheet.getRange(2, 1, lastRow - 1, 10).getValues();
+  const list = [];
+  rows.forEach((r, idx) => {
+    let bDateStr = "";
+    if (r[1] instanceof Date) {
+      bDateStr = Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd");
+    } else {
+      bDateStr = String(r[1] || "").substring(0, 10);
+    }
+
+    let createTimeStr = "";
+    if (r[6] instanceof Date) {
+      createTimeStr = Utilities.formatDate(r[6], "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
+    } else {
+      createTimeStr = String(r[6] || "");
+    }
+
+    list.push({
+      rowIndex: idx + 2,
+      bookingNo: String(r[0] || "").trim(),
+      eventDate: bDateStr,
+      productName: String(r[2] || "").trim(),
+      qty: Number(r[3]) || 0,
+      groupName: String(r[4] || "").trim(),
+      phone: String(r[5] || "").trim(),
+      createdAt: createTimeStr,
+      light: String(r[7] || "GREEN").trim(),
+      procurementStatus: String(r[8] || "").trim(),
+      note: String(r[9] || "").trim()
+    });
+  });
+
+  return list;
+}
+
+/**
+ * 更新已存在的預約登記資料
+ * @param {Object} data { bookingNo, eventDate, productName, qty, groupName, phone, note }
+ */
+function updateBookingRecord(data) {
+  const cleanNo = String(data.bookingNo || "").trim();
+  if (!cleanNo) return { success: false, message: "預約單號不得為空" };
+
+  const ss = getSpreadsheet();
+  const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
+  const lastRow = bkSheet.getLastRow();
+  if (lastRow <= 1) return { success: false, message: "查無預約紀錄" };
+
+  const rows = bkSheet.getRange(2, 1, lastRow - 1, 10).getValues();
+  let targetRowIndex = -1;
+
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === cleanNo) {
+      targetRowIndex = i + 2;
+      break;
+    }
+  }
+
+  if (targetRowIndex === -1) {
+    return { success: false, message: `找不到預約單號 [${cleanNo}]` };
+  }
+
+  // 格式化日期
+  const newDate = String(data.eventDate || "").replace(/-/g, "/").trim();
+  const newQty = Number(data.qty) || 0;
+  const newProd = String(data.productName || "").trim();
+  const newGroup = String(data.groupName || "").trim();
+  const newPhone = String(data.phone || "").trim();
+  const newNote = String(data.note || "").trim();
+
+  // 更新該行資料
+  bkSheet.getRange(targetRowIndex, 2).setValue(newDate);
+  bkSheet.getRange(targetRowIndex, 3).setValue(newProd);
+  bkSheet.getRange(targetRowIndex, 4).setValue(newQty);
+  bkSheet.getRange(targetRowIndex, 5).setValue(newGroup);
+  bkSheet.getRange(targetRowIndex, 6).setValue(newPhone);
+  bkSheet.getRange(targetRowIndex, 10).setValue(newNote);
+
+  // 重新試算 45 天動態推移
+  generate45DaysProjection();
+
+  return {
+    success: true,
+    message: `預約單 [${cleanNo}] 已成功更新！`,
+    bookingNo: cleanNo
+  };
+}
+
+/**
+ * 刪除指定預約紀錄
+ * @param {string} bookingNo 預約單號
+ */
+function deleteBookingRecord(bookingNo) {
+  const cleanNo = String(bookingNo || "").trim();
+  if (!cleanNo) return { success: false, message: "預約單號不得為空" };
+
+  const ss = getSpreadsheet();
+  const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
+  const lastRow = bkSheet.getLastRow();
+  if (lastRow <= 1) return { success: false, message: "查無預約紀錄" };
+
+  const rows = bkSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === cleanNo) {
+      bkSheet.deleteRow(i + 2);
+      generate45DaysProjection();
+      return {
+        success: true,
+        message: `預約單 [${cleanNo}] 已成功刪除，庫存配額已即時釋放！`
+      };
+    }
+  }
+
+  return { success: false, message: `找不到預約單號 [${cleanNo}]` };
 }
 
 /**
