@@ -245,6 +245,124 @@
     th { background: #f8fafc; padding: 9px 10px; font-weight: 600; border-bottom: 1px solid var(--border); color: #475569; }
     td { padding: 9px 10px; border-bottom: 1px solid var(--border); }
     tr:hover td { background-color: #fcfcfc; }
+
+    /* 預約清冊專屬全寬現代化排版 */
+    .booking-full-card {
+      margin-top: 24px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .booking-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .booking-toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .booking-toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .booking-code-tag {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: #1e293b;
+      background: #f1f5f9;
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      display: inline-block;
+      white-space: nowrap;
+    }
+    .weekday-tag {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 4px;
+      font-weight: 600;
+      display: inline-block;
+      white-space: nowrap;
+    }
+    .weekday-tag.weekend { background: #fee2e2; color: #b91c1c; }
+    .weekday-tag.weekday { background: #f1f5f9; color: #475569; }
+    .product-tag {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e293b;
+      white-space: nowrap;
+      display: inline-block;
+    }
+    .booking-table-modern {
+      width: 100%;
+      min-width: 980px;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+    .booking-table-modern th {
+      background: #f8fafc;
+      font-weight: 700;
+      color: #475569;
+      padding: 12px 14px;
+      border-bottom: 2px solid #e2e8f0;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .booking-table-modern td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: middle;
+      font-size: 13px;
+    }
+    .booking-table-modern tr:hover td {
+      background-color: #f8fafc;
+    }
+    .btn-action-edit {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #2563eb;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-action-edit:hover {
+      background: #dbeafe;
+      border-color: #93c5fd;
+    }
+    .btn-action-delete {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #dc2626;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-action-delete:hover {
+      background: #fee2e2;
+      border-color: #fca5a5;
+    }
     
     /* 拖曳區 */
     .drop-zone {
@@ -789,7 +907,7 @@
             </div>
           </div>
 
-          <!-- 右側：6 大方案組數看板與用料抽屜 ＋ 30天預約清單 -->
+          <!-- 右側：方案組數看板與用料抽屜 -->
           <div>
             <!-- 組數看板 ＋ 活動抽屜 -->
             <div class="card">
@@ -807,35 +925,57 @@
                 <!-- 動態注入抽屜卡片 -->
               </div>
             </div>
+          </div>
 
-            <!-- 預約登記管理清冊 (支援編輯、刪除與缺口提醒) -->
-            <div class="card">
-              <div class="card-title">
-                <span class="card-title-text">📋 預約登記管理清冊 (可直接修改與刪除)</span>
-                <button class="btn btn-outline btn-sm" onclick="loadBookingList()">🔄 刷新列表</button>
+        </div> <!-- /grid-2 業務接單即時作業區結束 -->
+
+        <!-- 下半部：預約登記管理清冊 (獨立全寬卡片，PC寬螢幕視野寬裕舒適) -->
+        <div class="card booking-full-card">
+          <div class="booking-toolbar">
+            <div class="booking-toolbar-left">
+              <span class="card-title-text" style="font-size: 17px; font-weight: 700; color: #1e293b;">
+                📋 預約登記管理清冊
+              </span>
+              <span id="booking-total-badge" style="font-size: 12px; font-weight: 600; color: var(--primary); background: var(--primary-light); padding: 3px 10px; border-radius: 12px;">
+                共 0 筆預約
+              </span>
+            </div>
+            
+            <div class="booking-toolbar-right">
+              <div style="position: relative;">
+                <input type="text" id="booking-search-input" class="form-input" style="width: 220px; padding: 6px 12px 6px 30px; font-size: 13px;" placeholder="搜尋單號、團體、電話、方案..." oninput="filterBookingTable()">
+                <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #94a3b8; pointer-events: none;">🔍</span>
               </div>
-              <div class="table-container" style="max-height: 380px; overflow-y: auto;">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>預約單號</th>
-                      <th>活動日</th>
-                      <th>方案商品</th>
-                      <th style="text-align:center;">套數</th>
-                      <th>團體 / 聯絡電話</th>
-                      <th>接單狀態 / 缺口提醒</th>
-                      <th style="text-align:center;">管理操作</th>
-                    </tr>
-                  </thead>
-                  <tbody id="recent-bookings-tbody">
-                    <tr><td colspan="7" style="text-align:center; color:#94a3b8;">載入中...</td></tr>
-                  </tbody>
-                </table>
-              </div>
+              <select id="booking-filter-status" class="form-select" style="width: 130px; padding: 6px 10px; font-size: 13px;" onchange="filterBookingTable()">
+                <option value="ALL">全部狀態</option>
+                <option value="GREEN">🟢 庫存充足</option>
+                <option value="YELLOW">🟡 需叫貨補料</option>
+                <option value="RED">🔴 額滿禁接</option>
+              </select>
+              <button class="btn btn-outline btn-sm" onclick="loadBookingList()">🔄 刷新列表</button>
             </div>
           </div>
 
+          <div class="table-container" style="max-height: 480px; overflow-y: auto;">
+            <table class="booking-table-modern">
+              <thead>
+                <tr>
+                  <th style="width: 14%;">預約單號</th>
+                  <th style="width: 13%;">活動日期</th>
+                  <th style="width: 18%;">體驗方案商品</th>
+                  <th style="width: 9%; text-align: center;">需求套數</th>
+                  <th style="width: 22%;">預約團體 / 聯絡電話</th>
+                  <th style="width: 13%;">接單狀態 / 缺口提醒</th>
+                  <th style="width: 11%; text-align: center;">管理操作</th>
+                </tr>
+              </thead>
+              <tbody id="recent-bookings-tbody">
+                <tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 24px 10px;">載入中...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
+
       </div>
 
       <!-- ================= TAB 3: 庫存管理與 ERP 上傳視角 ================= -->
@@ -2143,50 +2283,116 @@
         .api_getBookingList();
     }
 
-    // 渲染預約清單至業務接單頁面與庫管缺口清冊
-    function renderBookingList(bookings) {
+    // 星期標記輔助
+    function getBookingWeekdayTag(dateStr) {
+      if (!dateStr) return "";
+      try {
+        const d = new Date(dateStr.replace(/\//g, "-"));
+        if (isNaN(d.getTime())) return "";
+        const day = d.getDay();
+        const names = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
+        const isWeekend = (day === 0 || day === 6);
+        return `<span class="weekday-tag ${isWeekend ? 'weekend' : 'weekday'}">${names[day]}</span>`;
+      } catch (e) {
+        return "";
+      }
+    }
+
+    // 即時篩選清冊 (關鍵字 + 燈號狀態)
+    function filterBookingTable() {
+      const keyword = (document.getElementById("booking-search-input") ? document.getElementById("booking-search-input").value : "").trim().toLowerCase();
+      const statusFilter = (document.getElementById("booking-filter-status") ? document.getElementById("booking-filter-status").value : "ALL");
+
+      let filtered = cachedBookingList || [];
+      if (statusFilter !== "ALL") {
+        filtered = filtered.filter(b => b.light === statusFilter);
+      }
+      if (keyword) {
+        filtered = filtered.filter(b => 
+          String(b.bookingNo || "").toLowerCase().includes(keyword) ||
+          String(b.groupName || "").toLowerCase().includes(keyword) ||
+          String(b.phone || "").toLowerCase().includes(keyword) ||
+          String(b.productName || "").toLowerCase().includes(keyword) ||
+          String(b.note || "").toLowerCase().includes(keyword) ||
+          String(b.eventDate || "").includes(keyword)
+        );
+      }
+
+      const totalBadge = document.getElementById("booking-total-badge");
+      if (totalBadge) {
+        if (keyword || statusFilter !== "ALL") {
+          totalBadge.innerText = `符合 ${filtered.length} 筆 (總共 ${cachedBookingList.length} 筆)`;
+        } else {
+          totalBadge.innerText = `共 ${cachedBookingList.length} 筆預約`;
+        }
+      }
+
+      renderBookingTableOnly(filtered);
+    }
+
+    // 渲染業務端預約清冊表格本體
+    function renderBookingTableOnly(bookings) {
       const tbody = document.getElementById("recent-bookings-tbody");
-      const shortageTbody = document.getElementById("booking-shortage-tbody");
+      if (!tbody) return;
 
       if (!bookings || bookings.length === 0) {
-        if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:20px 10px;">目前尚無任何預約登記紀錄</td></tr>';
-        if (shortageTbody) shortageTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:16px 10px;">目前無預約缺口，物料庫存充裕</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:32px 10px; font-size:14px;">📭 目前無符合條件之預約登記紀錄</td></tr>';
         return;
       }
 
-      if (tbody) {
-        tbody.innerHTML = bookings.map(b => {
-          let lightTag = `<span class="status-badge ${b.light}">${b.light === "YELLOW" ? "🟡需補料" : (b.light === "RED" ? "🔴禁接" : "🟢充足")}</span>`;
-          let statusText = b.procurementStatus ? `<div style="font-size:11px; color:#b45309; font-weight:600; margin-top:2px;">${b.procurementStatus}</div>` : '';
+      tbody.innerHTML = bookings.map(b => {
+        let lightTag = `<span class="status-badge ${b.light}">${b.light === "YELLOW" ? "🟡需叫貨補料" : (b.light === "RED" ? "🔴額滿禁接" : "🟢庫存充足")}</span>`;
+        let statusText = b.procurementStatus ? `<div style="font-size:11px; color:#b45309; font-weight:600; margin-top:3px;">${b.procurementStatus}</div>` : '';
 
-          return `
-            <tr>
-              <td><strong>${b.bookingNo}</strong></td>
-              <td>${b.eventDate}</td>
-              <td>${b.productName}</td>
-              <td style="text-align:center; font-weight:700; color:var(--primary);">${b.qty} 套</td>
-              <td>
-                <div>${b.groupName || "一般團體"}</div>
-                <div style="font-size:11px; color:#64748b;">${b.phone || "-"}</div>
-              </td>
-              <td>
-                ${lightTag}
-                ${statusText}
-              </td>
-              <td style="text-align:center;">
-                <div style="display:inline-flex; gap:6px;">
-                  <button class="btn btn-outline btn-sm" onclick="openBookingEditModal('${b.bookingNo}')" title="修改預約資料">
-                    ✏️ 編輯
-                  </button>
-                  <button class="btn btn-danger btn-sm" onclick="deleteBookingItem('${b.bookingNo}')" title="刪除預約">
-                    🗑️
-                  </button>
-                </div>
-              </td>
-            </tr>
-          `;
-        }).join("");
-      }
+        return `
+          <tr>
+            <td>
+              <span class="booking-code-tag">${b.bookingNo}</span>
+              ${b.createdAt ? `<div style="font-size:11px; color:#94a3b8; margin-top:3px;">登記:${b.createdAt.substring(5, 16)}</div>` : ''}
+            </td>
+            <td>
+              <div style="font-weight:700; color:#1e293b; font-size:13px; white-space:nowrap;">
+                ${b.eventDate} ${getBookingWeekdayTag(b.eventDate)}
+              </div>
+            </td>
+            <td>
+              <span class="product-tag">${b.productName}</span>
+            </td>
+            <td style="text-align:center;">
+              <span style="font-size:16px; font-weight:800; color:var(--primary);">${b.qty}</span>
+              <span style="font-size:12px; color:#64748b;"> 套</span>
+            </td>
+            <td>
+              <div style="font-weight:700; color:#1e293b; font-size:13px;">${b.groupName || "一般團體或現場預約"}</div>
+              ${b.phone ? `<div style="font-size:12px; color:#64748b; margin-top:2px;">📞 ${b.phone}</div>` : ''}
+              ${b.note ? `<div style="font-size:11px; color:#94a3b8; margin-top:2px; font-style:italic;">📝 ${b.note}</div>` : ''}
+            </td>
+            <td>
+              ${lightTag}
+              ${statusText}
+            </td>
+            <td style="text-align:center; white-space:nowrap;">
+              <div style="display:inline-flex; gap:6px;">
+                <button class="btn-action-edit" onclick="openBookingEditModal('${b.bookingNo}')" title="修改預約內容">
+                  ✏️ 編輯
+                </button>
+                <button class="btn-action-delete" onclick="deleteBookingItem('${b.bookingNo}')" title="取消此筆預約">
+                  🗑️ 取消
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    // 渲染預約清單至業務接單頁面與庫管缺口清冊
+    function renderBookingList(bookings) {
+      cachedBookingList = bookings || [];
+      const shortageTbody = document.getElementById("booking-shortage-tbody");
+
+      // 觸發業務端清冊渲染
+      filterBookingTable();
 
       // 彙整有缺口之預約 (庫管端缺口提醒清冊，需求 3)
       if (shortageTbody) {
