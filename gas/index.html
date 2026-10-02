@@ -3013,12 +3013,20 @@
       document.getElementById("bom-input-desc").value = prod.desc || "";
 
       const rules = cachedBOMData.bomRules.filter(r => r.productId === productId);
+      const activeCats = new Set((cachedBOMData.availableCategories || []).map(c => String(c).trim()));
+      const activeCodes = new Set((cachedBOMData.masterMaterials || []).map(m => String(m.itemCode).trim()));
+      // 僅載入有效啟用中材料之配方 (已停用料在 BOM 表內不見)
+      const validRules = rules.filter(r => {
+        const cat = String(r.category || "").trim();
+        return activeCats.has(cat) || activeCodes.has(cat);
+      });
+
       const tbody = document.getElementById("bom-items-tbody");
       tbody.innerHTML = "";
-      if (rules.length === 0) {
+      if (validRules.length === 0) {
         addBOMItemRow();
       } else {
-        rules.forEach(r => addBOMItemRow(r.category, r.qty, r.note));
+        validRules.forEach(r => addBOMItemRow(r.category, r.qty, r.note));
       }
       document.getElementById("modal-bom-editor").style.display = "flex";
     }
@@ -3045,9 +3053,11 @@
         return String(a.itemCode || "").localeCompare(String(b.itemCode || ""));
       });
 
+      let matchedAny = false;
       let optionsHtml = '<optgroup label="📦 材料種類代碼 (總量池群組)">';
       cats.forEach(c => {
         const isSel = (selectedCategory === c);
+        if (isSel) matchedAny = true;
         optionsHtml += `<option value="${c}" ${isSel ? 'selected' : ''}>${c}</option>`;
       });
       optionsHtml += '</optgroup>';
@@ -3059,9 +3069,15 @@
           const val = m.itemCode;
           const label = `${m.itemCode} - ${m.itemName} (${m.category})`;
           const isSel = (selectedCategory === m.itemCode || selectedCategory === m.category);
+          if (isSel) matchedAny = true;
           optionsHtml += `<option value="${val}" ${isSel ? 'selected' : ''}>${label}</option>`;
         });
         optionsHtml += '</optgroup>';
+      }
+
+      // 若指定了 selectedCategory 但不在目前啟用清單中 (例如已被停用)，不應添加或胡亂跳選首項
+      if (selectedCategory && !matchedAny) {
+        return;
       }
 
       const tr = document.createElement("tr");
@@ -3199,7 +3215,7 @@
       tbody.innerHTML = materials.map(m => {
         const isInactive = (m.status === "停用");
         return `
-          <tr style="${isInactive ? 'opacity: 0.5; background: #f8fafc;' : ''}">
+          <tr style="${isInactive ? 'opacity: 0.65; background: #f8fafc;' : ''}">
             <td><strong>${m.itemCode}</strong></td>
             <td>${m.itemName}</td>
             <td><span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:12px; font-weight:600;">${m.category}</span></td>
@@ -3207,7 +3223,7 @@
             <td style="font-size:12px; color:#64748b;">${m.note || '-'}</td>
             <td>
               <span class="status-badge ${isInactive ? 'RED' : 'GREEN'}" style="font-size:11px;">
-                ${m.status || '啟用'}
+                ${isInactive ? '⚪ 停用' : '🟢 啟用'}
               </span>
             </td>
             <td>
@@ -3216,7 +3232,7 @@
                   ✏️ 編輯
                 </button>
                 <button class="btn ${isInactive ? 'btn-success' : 'btn-danger'} btn-sm" onclick="toggleMaterialStatus('${m.itemCode}', '${m.status}')">
-                  ${isInactive ? '啟用' : '停用'}
+                  ${isInactive ? '🟢 啟用' : '🔴 停用'}
                 </button>
               </div>
             </td>
@@ -3294,40 +3310,29 @@
     }
 
     function toggleMaterialStatus(itemCode, currentStatus) {
-      if (currentStatus === "停用") {
-        const mat = cachedMaterialsList.find(m => m.itemCode === itemCode);
-        if (!mat) return;
-        showLoading(true, "重新啟用原物料中...");
-        google.script.run
-          .withSuccessHandler(function(res) {
-            showLoading(false);
-            alert(res.message);
-            loadMaterialsList();
-            loadBOMManagement();
-            loadDashboard();
-          })
-          .withFailureHandler(function(err) {
-            showLoading(false);
-            alert("啟用失敗: " + err);
-          })
-          .api_saveMaterial(mat);
-      } else {
-        if (!confirm(`確定要停用原物料 [${itemCode}] 嗎？`)) return;
-        showLoading(true, "停用原物料中...");
-        google.script.run
-          .withSuccessHandler(function(res) {
-            showLoading(false);
-            alert(res.message);
-            loadMaterialsList();
-            loadBOMManagement();
-            loadDashboard();
-          })
-          .withFailureHandler(function(err) {
-            showLoading(false);
-            alert("停用失敗: " + err);
-          })
-          .api_deleteMaterial(itemCode);
+      const targetStatus = (currentStatus === "停用") ? "啟用" : "停用";
+      const actionName = (targetStatus === "啟用") ? "啟用" : "停用";
+
+      if (targetStatus === "停用") {
+        if (!confirm(`確定要停用原物料 [${itemCode}] 嗎？\n停用後將從 BOM 配方與接單推移中隱藏，材料表中仍可隨時重新啟用。`)) return;
       }
+
+      showLoading(true, `正在${actionName}原物料 [${itemCode}]...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            loadMaterialsList();
+            loadBOMManagement();
+            loadDashboard();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert(`${actionName}失敗: ` + err);
+        })
+        .api_toggleMaterialStatus(itemCode, targetStatus);
     }
 
     function renderMaterialSelect(materials) {

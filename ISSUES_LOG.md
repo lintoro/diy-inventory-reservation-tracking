@@ -232,3 +232,19 @@
 - **狀態**：🟢 已修復並部署至 Version @17 (2026-10-02)
 
 ---
+
+### ISSUE-020：原物料停用時材料表內直接消失，且 BOM 編輯表因無選項錯誤跳選成首項「手能生巧」
+- **問題描述**：
+  - 使用者在材料品號管理停用 `5D3000005` 後，該料號在材料表直接消失，無法點擊「啟用」恢復。
+  - 同時在開啟請多紙膠之 BOM 編輯彈窗時，第 3 列原為 `5D3000005`，因選單找不到停用料，瀏覽器自動跳選成首個選項「手能生巧」。
+- **根因分析**：
+  - `gas/00_Config.js` 之 `getDynamicMasterMaterials` 於底層直接排除 `status === "停用"` 之列，導致 `api_getAllMaterials()` 無法回傳停用材料供管理介面呈現。
+  - `03_BOM配方設定表` 仍存有已停用料的配方規則，前端載入時 `<select>` 因無停用料選項而觸發 HTML 標準 Fallback 行為跳選第一項。
+- **解決方案**：
+  - `getDynamicMasterMaterials(includeInactive)` 擴充支援參數：業務推移與短板預設 `false`（排除停用料）；原物料主檔管理傳入 `true`（全量回傳）。
+  - `gas/05_API.js` 新增 `api_toggleMaterialStatus(itemCode, targetStatus)`，支援一鍵切換「啟用」與「停用」。
+  - 前端材料表：停用料顯示 `⚪ 停用` 標籤與綠色 `🟢 啟用` 按鍵，點擊一鍵恢復原狀。
+  - 前端與後端 BOM 管理：`api_getAllProductsAndBOM` 與 `openEditProductModal` 自動過濾已停用材料之配方規則，在 BOM 內乾淨隱藏（不見），且 `addBOMItemRow` 加入無效料防呆阻擋，徹底根治跳選「手能生巧」Bug。
+- **狀態**：🟢 已修復並部署至 Version @18 (2026-10-02)
+
+---

@@ -622,20 +622,28 @@ function api_deleteBooking(bookingNo) {
 function api_getAllProductsAndBOM() {
   try {
     const dyn = getDynamicProductsAndBOM();
-    const dynamicMaterials = getDynamicMasterMaterials();
+    const dynamicMaterials = getDynamicMasterMaterials(false); // 僅抓取啟用中的材料
     
-    // 彙整所有可用的材料分類清單 (包含底表中所有已存在分類) 並依名稱排序
+    // 彙整所有可用的材料分類清單與有效品號
     const categoriesSet = new Set();
+    const activeItemCodes = new Set();
     dynamicMaterials.forEach(m => {
       if (m.category) categoriesSet.add(m.category);
+      if (m.itemCode) activeItemCodes.add(m.itemCode);
     });
 
     const sortedCategories = Array.from(categoriesSet).sort((a, b) => a.localeCompare(b, "zh-Hant"));
 
+    // 過濾掉已被停用的原物料配方規則 (在 BOM 表內不見)
+    const filteredBomRules = dyn.bomRules.filter(r => {
+      const cat = String(r.category || "").trim();
+      return activeItemCodes.has(cat) || categoriesSet.has(cat);
+    });
+
     return {
       success: true,
       products: dyn.products,
-      bomRules: dyn.bomRules,
+      bomRules: filteredBomRules,
       availableCategories: sortedCategories,
       masterMaterials: dynamicMaterials
     };
@@ -645,11 +653,11 @@ function api_getAllProductsAndBOM() {
 }
 
 /**
- * API: 取得所有原物料主檔清冊 (供原物料管理介面使用)
+ * API: 取得所有原物料主檔清冊 (供原物料管理介面使用，包含啟用與停用資料)
  */
 function api_getAllMaterials() {
   try {
-    const list = getDynamicMasterMaterials();
+    const list = getDynamicMasterMaterials(true); // 取得包含啟用與停用的完整清單
     const categoriesSet = new Set();
     list.forEach(m => {
       if (m.category) categoriesSet.add(m.category);
@@ -674,9 +682,10 @@ function api_getAllMaterials() {
 function api_saveMaterial(matData) {
   try {
     const list = saveDynamicMasterMaterial(matData);
+    generate45DaysProjection();
     return {
       success: true,
-      message: `原物料【${matData.itemName}】(品號: ${matData.itemCode}) 已成功建立並寫入材料主檔！`,
+      message: `原物料【${matData.itemName}】(品號: ${matData.itemCode}) 已成功儲存！`,
       materials: list
     };
   } catch (err) {
@@ -685,20 +694,31 @@ function api_saveMaterial(matData) {
 }
 
 /**
- * API: 停用原物料品號
+ * API: 切換原物料啟用/停用狀態
  * @param {string} itemCode 材料品號
+ * @param {string} targetStatus 目標狀態 ("啟用" 或 "停用")
  */
-function api_deleteMaterial(itemCode) {
+function api_toggleMaterialStatus(itemCode, targetStatus) {
   try {
-    const list = deleteDynamicMasterMaterial(itemCode);
+    const status = (targetStatus === "停用") ? "停用" : "啟用";
+    const list = toggleDynamicMasterMaterialStatus(itemCode, status);
+    generate45DaysProjection();
     return {
       success: true,
-      message: `材料品號 [${itemCode}] 已標記為停用！`,
+      message: `材料品號 [${itemCode}] 已成功標記為【${status}】！`,
       materials: list
     };
   } catch (err) {
-    return { success: false, message: "停用材料失敗: " + err.message };
+    return { success: false, message: "切換材料狀態失敗: " + err.message };
   }
+}
+
+/**
+ * API: 停用原物料品號 (相容舊呼叫)
+ * @param {string} itemCode 材料品號
+ */
+function api_deleteMaterial(itemCode) {
+  return api_toggleMaterialStatus(itemCode, "停用");
 }
 
 /**

@@ -350,9 +350,10 @@ function deleteDynamicProduct(productId) {
 
 /**
  * 取得當前所有材料品號 (由 02_材料品號對照表 底表驅動，若底表為空則回退至預設 MASTER_MATERIALS)
+ * @param {boolean} [includeInactive=false] 是否包含已停用的材料 (原物料管理介面傳入 true，接單與推移傳入 false)
  * @returns {Array<Object>} 材料主檔清單
  */
-function getDynamicMasterMaterials() {
+function getDynamicMasterMaterials(includeInactive = false) {
   try {
     const ss = getSpreadsheet();
     const sheet = ss.getSheetByName(CONFIG.SHEETS.MATERIAL_MASTER);
@@ -371,15 +372,17 @@ function getDynamicMasterMaterials() {
       const note = String(r[4] || "").trim();
       const status = String(r[5] || "啟用").trim();
 
-      if (code && status !== "停用") {
-        list.push({
-          itemCode: code,
-          itemName: name,
-          category: cat,
-          color: color,
-          note: note,
-          status: status
-        });
+      if (code) {
+        if (includeInactive || status !== "停用") {
+          list.push({
+            itemCode: code,
+            itemName: name,
+            category: cat,
+            color: color,
+            note: note,
+            status: status
+          });
+        }
       }
     });
 
@@ -441,32 +444,46 @@ function saveDynamicMasterMaterial(matData) {
     sheet.appendRow([code, name, cat, color, note, "啟用"]);
   }
 
-  return getDynamicMasterMaterials();
+  return getDynamicMasterMaterials(true);
 }
 
 /**
- * 停用或刪除原物料品號
+ * 切換原物料品號啟用/停用狀態
  * @param {string} itemCode 材料品號
+ * @param {string} targetStatus 目標狀態 ("啟用" 或 "停用")
  */
-function deleteDynamicMasterMaterial(itemCode) {
+function toggleDynamicMasterMaterialStatus(itemCode, targetStatus) {
   const code = String(itemCode || "").trim();
   if (!code) throw new Error("未指定材料品號");
+  const status = (targetStatus === "停用") ? "停用" : "啟用";
 
   const ss = getSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEETS.MATERIAL_MASTER);
-  if (!sheet) return;
+  if (!sheet) throw new Error("材料主檔底表不存在");
 
   const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return;
+  if (lastRow <= 1) throw new Error("材料主檔底表無資料");
 
   const existing = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+  let found = false;
   for (let i = 0; i < existing.length; i++) {
     if (String(existing[i][0]).trim() === code) {
-      sheet.getRange(i + 2, 6).setValue("停用");
+      sheet.getRange(i + 2, 6).setValue(status);
+      found = true;
       break;
     }
   }
 
-  return getDynamicMasterMaterials();
+  if (!found) throw new Error(`找不到材料品號 [${code}]`);
+
+  return getDynamicMasterMaterials(true);
+}
+
+/**
+ * 停用原物料品號 (相容舊呼叫)
+ * @param {string} itemCode 材料品號
+ */
+function deleteDynamicMasterMaterial(itemCode) {
+  return toggleDynamicMasterMaterialStatus(itemCode, "停用");
 }
 

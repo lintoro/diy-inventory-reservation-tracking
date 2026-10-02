@@ -46,7 +46,12 @@
     - 後端 `api_processGoodsReceipt` 寫入入庫流水、更新採購清冊狀態、累加有效庫存並滾動推移。
   - **數值單號型別防呆修復 (ISSUE-019)**：
     - 修復純數值單號在呼叫 `p.poNumber.includes(...)` 時報 `TypeError: not a function` 的型別問題，全面轉換為 `String(...)` 並加入品號兜底。
-  - **正式部署**：Web App 更新部署至 Version **`@17`**。
+  - **Phase 14：原物料停用狀態管理與 BOM 表過濾已停用料 (ISSUE-020)**：
+    - `getDynamicMasterMaterials(includeInactive)` 支援參數分流：推移與短板排除停用料，材料主檔管理全量回傳。
+    - 後端新增 `api_toggleMaterialStatus(itemCode, targetStatus)`，支援一鍵「啟用」與「停用」並即時連動推移重算。
+    - 材料管理表：停用材料保留顯示並標記 `⚪ 停用`（灰底淡化），右側操作按鈕切換為綠色 `🟢 啟用`，可隨時恢復原狀。
+    - BOM 配方管理：`api_getAllProductsAndBOM` 與 `openEditProductModal` 自動過濾已停用材料之配方，在 BOM 表內乾淨隱藏（不見），`addBOMItemRow` 阻擋無效料，徹底根除找不到選項跳選「手能生巧」之問題。
+  - **正式部署**：Web App 更新部署至 Version **`@18`**。
 
 ### 2026-09-28
 - [x] 完成 Phase 12：
