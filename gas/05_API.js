@@ -99,12 +99,16 @@ function api_getDashboardOverview() {
         pendingPOs.push({
           poNumber: String(r[0] || "").trim(),
           orderDate: orderDateStr,
+          demandDate: orderDateStr,
           deadline: deadlineStr,
+          replenishmentDate: deadlineStr,
           itemCode: String(r[3] || "").trim(),
           itemName: String(r[4] || "").trim(),
           qty: Number(r[5]) || 0,
           status: String(r[6] || "").trim(),
-          bookingNo: String(r[7] || "").trim()
+          bookingNo: String(r[7] || "").trim(),
+          refNo: String(r[7] || "").trim(),
+          note: poNote
         });
       });
     }

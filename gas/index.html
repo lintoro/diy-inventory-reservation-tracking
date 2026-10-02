@@ -709,6 +709,57 @@
         </div>
       </div>
     </div>
+
+  <!-- ==================== 單筆採購到貨點交 Modal ==================== -->
+  <div id="modal-single-receipt" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 520px; width: 95%;">
+      <div class="card-title">
+        <span class="card-title-text">📦 單筆採購到貨點交與核銷</span>
+        <button class="btn btn-outline btn-sm" onclick="closeSingleReceiptModal()">✕</button>
+      </div>
+
+      <div style="background: #f8fafc; padding: 12px 14px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 14px; font-size: 13px;">
+        <div style="margin-bottom: 6px;"><strong>請購/採購單號：</strong><span id="sr-modal-pono" style="font-family:monospace; color:var(--primary); font-weight:700;">-</span></div>
+        <div style="margin-bottom: 6px;"><strong>材料品號/品名：</strong><span id="sr-modal-mat" style="font-weight:600;">-</span></div>
+        <div><strong>原請購採購數量：</strong><strong id="sr-modal-reqqty" style="color:#b91c1c; font-size:15px;">0</strong></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" style="font-weight:700;">到貨點交模式</label>
+        <div style="display:flex; flex-direction:column; gap:10px; background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:10px 12px;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="radio" name="sr-action-type" value="FULL" checked onchange="handleSingleReceiptTypeChange()">
+            <span>🟢 <strong>完工全數到貨</strong> (實收等於原請購數，整筆結案入庫)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="radio" name="sr-action-type" value="SHORT_CLOSE" onchange="handleSingleReceiptTypeChange()">
+            <span>🟡 <strong>短交結案 (不會再來了)</strong> (剩餘在途清零不再補，防業務超賣)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="radio" name="sr-action-type" value="SHORT_KEEP" onchange="handleSingleReceiptTypeChange()">
+            <span>🔵 <strong>短交保留 (後續還會再補來)</strong> (剩餘在途保留繼續追蹤)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group" id="sr-received-group" style="display:none;">
+        <label class="form-label" style="font-weight:700;">本次實際到貨數量 <span style="color:red;">*</span></label>
+        <input type="number" id="sr-received-qty" class="form-input" min="1" placeholder="請輸入本次實收數量" oninput="calculateSingleReceiptShortage()">
+        <div id="sr-shortage-hint" style="font-size:12px; margin-top:6px; font-weight:600;"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">進貨單號 / 點交備註 (選填)</label>
+        <input type="text" id="sr-note" class="form-input" placeholder="例如：進貨單 260929001 或 現場實收點交結案">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px;">
+        <button class="btn btn-outline" type="button" onclick="closeSingleReceiptModal()">取消</button>
+        <button class="btn btn-success" type="button" onclick="submitSingleReceipt()">
+          ✅ 確認點交入庫 ➔
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- ==================== 預約登記修改 Modal ==================== -->
@@ -1243,35 +1294,66 @@
             </div>
           </details>
 
-          <!-- 在途採購清冊表格 (含批次核銷與多選) -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <div style="font-weight: 700; font-size: 14px; color: #334155;">
-              📋 在途採購與進貨補貨清冊
+          <!-- 在途採購清冊與歷史入庫雙頁籤標籤 -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; gap: 8px;">
+              <button id="po-tab-btn-active" class="btn btn-primary btn-sm" type="button" onclick="switchPOTab('active')">
+                ⏳ 在途採購清冊 (待進貨追蹤: <span id="active-po-count">0</span>)
+              </button>
+              <button id="po-tab-btn-history" class="btn btn-outline btn-sm" type="button" onclick="switchPOTab('history')">
+                ✅ 歷史驗收入庫紀錄 (已結案查證: <span id="history-po-count">0</span>)
+              </button>
             </div>
             <button id="btn-batch-receive" class="btn btn-success btn-sm" onclick="batchMarkSelectedPOsReceived()" style="display: none;">
-              ✅ 批次確認到貨入庫 (<span id="selected-po-count">0</span>)
+              ✅ 批次確認全數到貨 (<span id="selected-po-count">0</span>)
             </button>
           </div>
-          <div class="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th style="width: 36px; text-align: center;">
-                    <input type="checkbox" id="po-select-all" onchange="toggleSelectAllPOs(this.checked)">
-                  </th>
-                  <th>請購/採購單號</th>
-                  <th>需求日期</th>
-                  <th>補貨日 (需求日+20天)</th>
-                  <th>品號 / 品名規格</th>
-                  <th style="text-align:center;">數量</th>
-                  <th>狀態</th>
-                  <th>到貨入庫操作</th>
-                </tr>
-              </thead>
-              <tbody id="pending-pos-tbody">
-                <tr><td colspan="8" style="text-align:center; color:#94a3b8;">目前無在途採購項目</td></tr>
-              </tbody>
-            </table>
+
+          <!-- 視圖 1: 待進貨追蹤清冊 (僅顯示待到貨，結案後自動移出) -->
+          <div id="po-view-active">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width: 36px; text-align: center;">
+                      <input type="checkbox" id="po-select-all" onchange="toggleSelectAllPOs(this.checked)">
+                    </th>
+                    <th>請購/採購單號</th>
+                    <th>需求日期</th>
+                    <th>補貨日 (需求日+20天)</th>
+                    <th>品號 / 品名規格</th>
+                    <th style="text-align:center;">採購數量</th>
+                    <th>狀態</th>
+                    <th style="text-align:center;">點交操作</th>
+                  </tr>
+                </thead>
+                <tbody id="pending-pos-tbody">
+                  <tr><td colspan="8" style="text-align:center; color:#94a3b8; padding:20px 10px;">目前無在途採購項目</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 視圖 2: 歷史驗收入庫紀錄 (已結案查證專區) -->
+          <div id="po-view-history" style="display: none;">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>請購單號</th>
+                    <th>進貨/驗收單號</th>
+                    <th>入庫日期</th>
+                    <th>品號 / 品名規格</th>
+                    <th style="text-align:center;">實收數量</th>
+                    <th>核銷狀態</th>
+                    <th>核銷備註說明</th>
+                  </tr>
+                </thead>
+                <tbody id="history-pos-tbody">
+                  <tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:20px 10px;">暫無歷史到貨入庫紀錄</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -1967,81 +2049,271 @@
     }
 
     let cachedPOList = [];
+    let currentPOTab = 'active';
 
-    // 渲染在途採購清單 (含多選 Checkbox 與核銷操作)
+    function switchPOTab(tab) {
+      currentPOTab = tab;
+      const activeView = document.getElementById("po-view-active");
+      const histView = document.getElementById("po-view-history");
+      const btnActive = document.getElementById("po-tab-btn-active");
+      const btnHist = document.getElementById("po-tab-btn-history");
+
+      if (tab === 'active') {
+        if (activeView) activeView.style.display = "block";
+        if (histView) histView.style.display = "none";
+        if (btnActive) btnActive.className = "btn btn-primary btn-sm";
+        if (btnHist) btnHist.className = "btn btn-outline btn-sm";
+      } else {
+        if (activeView) activeView.style.display = "none";
+        if (histView) histView.style.display = "block";
+        if (btnActive) btnActive.className = "btn btn-outline btn-sm";
+        if (btnHist) btnHist.className = "btn btn-primary btn-sm";
+      }
+    }
+
+    // 渲染在途採購清單與歷史驗收紀錄 (雙視圖分流，8欄精確對齊)
     function renderPendingPOs(list) {
       cachedPOList = list || [];
-      const tbody = document.getElementById("pending-pos-tbody");
+      const pendingTbody = document.getElementById("pending-pos-tbody");
+      const historyTbody = document.getElementById("history-pos-tbody");
       const selectAllChk = document.getElementById("po-select-all");
       if (selectAllChk) selectAllChk.checked = false;
       updateSelectedPOCount();
 
-      if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#94a3b8; padding:20px 10px;">目前無在途採購項目</td></tr>';
+      // 材料主檔快取 (供反查標準品名與規格，徹底根治問題 1)
+      const masterMaterials = (cachedDashboardData && cachedDashboardData.materials) ? cachedDashboardData.materials : [];
+
+      // 分流：在途待進貨 vs 歷史已入庫 (解決問題 3)
+      const activeList = (list || []).filter(p => {
+        const s = String(p.status || "").trim();
+        return !s.includes("已到貨") && !s.includes("已取消");
+      });
+
+      const historyList = (list || []).filter(p => {
+        const s = String(p.status || "").trim();
+        return s.includes("已到貨") || s.includes("已取消");
+      });
+
+      const activeBadge = document.getElementById("active-po-count");
+      const histBadge = document.getElementById("history-po-count");
+      if (activeBadge) activeBadge.innerText = activeList.length;
+      if (histBadge) histBadge.innerText = historyList.length;
+
+      // 1. 渲染在途待進貨追蹤清冊 (8 欄嚴格對齊)
+      if (activeList.length === 0) {
+        pendingTbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#94a3b8; padding:24px 10px;">🎉 目前所有採購單據皆已全數到貨結案，無在途待催項目！</td></tr>';
+      } else {
+        pendingTbody.innerHTML = activeList.map(p => {
+          const chkBox = `<input type="checkbox" class="po-item-chk" value="${p.poNumber}" onchange="updateSelectedPOCount()">`;
+          
+          // 動態反查標準品名與規格
+          const mat = masterMaterials.find(m => m.itemCode === p.itemCode);
+          const displayName = (mat && mat.itemName) ? mat.itemName : (p.itemName || p.itemCode);
+          let displaySpec = (mat && mat.color) ? mat.color : (p.spec || "");
+          if (!displaySpec && p.note && !p.note.includes("需求日")) {
+            displaySpec = p.note;
+          }
+
+          const actionBtn = `
+            <button class="btn btn-primary btn-sm" type="button" onclick="openSingleReceiptModal('${p.poNumber}', '${p.itemCode}', ${p.qty}, '${displayName.replace(/'/g, "\\'")}', '${displaySpec.replace(/'/g, "\\'")}')">
+              📦 到貨點交
+            </button>
+          `;
+
+          return `
+            <tr>
+              <td style="text-align:center;">${chkBox}</td>
+              <td><strong>${p.poNumber}</strong></td>
+              <td>${p.demandDate || p.orderDate || "-"}</td>
+              <td><strong style="color:#2563eb;">${p.replenishmentDate || p.deadline || "-"}</strong></td>
+              <td>
+                <div style="font-weight:700; color:#1e293b; font-size:13px;">${p.itemCode} / ${displayName}</div>
+                ${displaySpec ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">規格: ${displaySpec}</div>` : ''}
+              </td>
+              <td style="text-align:center; color:#b91c1c; font-weight:700; font-size:14px;">+${p.qty}</td>
+              <td><span class="status-badge YELLOW" style="font-size:11px;">${p.status || '在途採購'}</span></td>
+              <td style="text-align:center;">${actionBtn}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      // 2. 渲染歷史驗收入庫紀錄 (7 欄嚴格對齊，供查證審計)
+      if (historyList.length === 0) {
+        historyTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:20px 10px;">暫無歷史到貨入庫紀錄</td></tr>';
+      } else {
+        historyTbody.innerHTML = historyList.map(p => {
+          const mat = masterMaterials.find(m => m.itemCode === p.itemCode);
+          const displayName = (mat && mat.itemName) ? mat.itemName : (p.itemName || p.itemCode);
+          let displaySpec = (mat && mat.color) ? mat.color : (p.spec || "");
+
+          const isShortClose = p.status.includes("短交");
+          const isDirect = p.status.includes("配貨");
+          let statusBadgeClass = "GREEN";
+          if (isShortClose) statusBadgeClass = "YELLOW";
+          if (isDirect) statusBadgeClass = "BLUE";
+
+          return `
+            <tr style="background:#f8fafc;">
+              <td><strong>${p.poNumber}</strong></td>
+              <td><span class="booking-code-tag">${p.refNo || p.bookingNo || '-'}</span></td>
+              <td>${p.replenishmentDate || p.demandDate || p.orderDate || "-"}</td>
+              <td>
+                <div style="font-weight:700; color:#1e293b; font-size:13px;">${p.itemCode} / ${displayName}</div>
+                ${displaySpec ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">規格: ${displaySpec}</div>` : ''}
+              </td>
+              <td style="text-align:center; color:#10b981; font-weight:700; font-size:14px;">+${p.qty}</td>
+              <td><span class="status-badge ${statusBadgeClass}" style="font-size:11px;">${p.status}</span></td>
+              <td style="font-size:12px; color:#475569;">${p.note || '-'}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+    }
+
+    // ==================== 單筆到貨點交 Modal 邏輯 (解決問題 2) ====================
+    let currentSinglePO = null;
+
+    function openSingleReceiptModal(poNumber, itemCode, qty, itemName, spec) {
+      currentSinglePO = {
+        poNumber: poNumber,
+        itemCode: itemCode,
+        qty: Number(qty) || 0,
+        itemName: itemName,
+        spec: spec
+      };
+
+      document.getElementById("sr-modal-pono").innerText = poNumber;
+      document.getElementById("sr-modal-mat").innerText = `${itemCode} / ${itemName}`;
+      document.getElementById("sr-modal-reqqty").innerText = qty;
+
+      // 預設全數到貨
+      const radios = document.getElementsByName("sr-action-type");
+      radios.forEach(r => { if (r.value === "FULL") r.checked = true; });
+
+      document.getElementById("sr-received-qty").value = qty;
+      document.getElementById("sr-received-group").style.display = "none";
+      document.getElementById("sr-note").value = "";
+      document.getElementById("sr-shortage-hint").innerText = "";
+
+      document.getElementById("modal-single-receipt").style.display = "flex";
+    }
+
+    function closeSingleReceiptModal() {
+      document.getElementById("modal-single-receipt").style.display = "none";
+      currentSinglePO = null;
+    }
+
+    function handleSingleReceiptTypeChange() {
+      if (!currentSinglePO) return;
+      const type = document.querySelector('input[name="sr-action-type"]:checked').value;
+      const recGroup = document.getElementById("sr-received-group");
+      const recInput = document.getElementById("sr-received-qty");
+
+      if (type === "FULL") {
+        recGroup.style.display = "none";
+        recInput.value = currentSinglePO.qty;
+      } else {
+        recGroup.style.display = "block";
+        if (Number(recInput.value) >= currentSinglePO.qty) {
+          recInput.value = "";
+        }
+        calculateSingleReceiptShortage();
+      }
+    }
+
+    function calculateSingleReceiptShortage() {
+      if (!currentSinglePO) return;
+      const type = document.querySelector('input[name="sr-action-type"]:checked').value;
+      const recQty = Number(document.getElementById("sr-received-qty").value) || 0;
+      const originalQty = currentSinglePO.qty;
+      const hint = document.getElementById("sr-shortage-hint");
+
+      if (type === "SHORT_CLOSE") {
+        if (recQty <= 0) {
+          hint.innerText = "請輸入本次大於 0 之實收到貨數量";
+          hint.style.color = "#dc2626";
+        } else if (recQty >= originalQty) {
+          hint.innerText = `實收數量已等於或大於原請購數 (${originalQty})，建議切換為【全數到貨】`;
+          hint.style.color = "#2563eb";
+        } else {
+          const shortage = originalQty - recQty;
+          hint.innerText = `本次實收 ${recQty} 套入庫，短交 ${shortage} 套強制結案不再補，在途數量立即清零！`;
+          hint.style.color = "#b45309";
+        }
+      } else if (type === "SHORT_KEEP") {
+        if (recQty <= 0) {
+          hint.innerText = "請輸入本次大於 0 之實收到貨數量";
+          hint.style.color = "#dc2626";
+        } else if (recQty >= originalQty) {
+          hint.innerText = `實收數量已等於或大於原請購數 (${originalQty})，建議切換為【全數到貨】`;
+          hint.style.color = "#2563eb";
+        } else {
+          const shortage = originalQty - recQty;
+          hint.innerText = `本次實收 ${recQty} 套入庫，剩餘 ${shortage} 套繼續保留在途清單待送`;
+          hint.style.color = "#0369a1";
+        }
+      } else {
+        hint.innerText = "";
+      }
+    }
+
+    function submitSingleReceipt() {
+      if (!currentSinglePO) return;
+      const type = document.querySelector('input[name="sr-action-type"]:checked').value;
+      const recQty = Number(document.getElementById("sr-received-qty").value) || 0;
+      const originalQty = currentSinglePO.qty;
+      const userNote = document.getElementById("sr-note").value.trim();
+
+      if (recQty <= 0) {
+        alert("實收到貨數量必須大於 0！");
         return;
       }
-      tbody.innerHTML = list.map(p => {
-        const isReceived = (p.status === "已到貨入庫");
-        const actionBtn = isReceived ? '<span style="color:#10b981; font-weight:600;">已入庫</span>' : `
-          <button class="btn btn-success btn-sm" onclick="markPOReceived('${p.poNumber}')">
-            ✅ 標記已到貨
-          </button>
-        `;
-        const chkBox = isReceived ? '' : `<input type="checkbox" class="po-item-chk" value="${p.poNumber}" onchange="updateSelectedPOCount()">`;
 
-        return `
-          <tr>
-            <td style="text-align:center;">${chkBox}</td>
-            <td><strong>${p.poNumber}</strong></td>
-            <td>${p.demandDate || p.orderDate || "-"}</td>
-            <td>
-              <div style="font-weight:700; color:#1e293b; font-size:13px;">${p.itemCode} / ${p.itemName}</div>
-              ${p.note ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${p.note}</div>` : ''}
-            </td>
-            <td style="text-align:center; color:#b91c1c; font-weight:700;">+${p.qty}</td>
-            <td><span style="color:${isReceived ? '#10b981' : '#f59e0b'}; font-weight:600;">${p.status}</span></td>
-            <td>${actionBtn}</td>
-          </tr>
-        `;
-      }).join("");
-    }
-
-    // 在途採購多選勾選切換
-    function toggleSelectAllPOs(checked) {
-      document.querySelectorAll(".po-item-chk").forEach(chk => {
-        chk.checked = checked;
-      });
-      updateSelectedPOCount();
-    }
-
-    function updateSelectedPOCount() {
-      const chks = document.querySelectorAll(".po-item-chk:checked");
-      const btn = document.getElementById("btn-batch-receive");
-      const countSpan = document.getElementById("selected-po-count");
-      if (chks.length > 0) {
-        if (btn) btn.style.display = "inline-flex";
-        if (countSpan) countSpan.innerText = chks.length;
-      } else {
-        if (btn) btn.style.display = "none";
+      let shortageQty = 0;
+      if (type === "SHORT_CLOSE" || type === "SHORT_KEEP") {
+        if (recQty >= originalQty) {
+          alert(`實收數量已達原採購量 (${originalQty})，請選擇【完工全數到貨】！`);
+          return;
+        }
+        shortageQty = originalQty - recQty;
       }
-    }
 
-    // 單筆標記已到貨核銷 (加入庫存)
-    function markPOReceived(poNumber) {
-      if (!confirm(`確定要將採購/請購單 [${poNumber}] 標記為【已到貨入庫】嗎？\n入庫後該數量將立即併入材料生效庫存！`)) return;
+      const todayStr = new Date().toISOString().substring(0, 10).replace(/-/g, "/");
+      const recNo = "REC-" + new Date().toISOString().substring(0, 10).replace(/-/g, "");
 
-      showLoading(true, `核銷採購單 [${poNumber}] 中...`);
+      const receiptPayload = {
+        receiptNo: recNo,
+        receiptDate: todayStr,
+        vendorName: "現場點交",
+        items: [{
+          itemCode: currentSinglePO.itemCode,
+          itemName: currentSinglePO.itemName,
+          receivedQty: recQty,
+          poNumber: currentSinglePO.poNumber,
+          actionType: type,
+          originalPoQty: originalQty,
+          shortageQty: shortageQty,
+          note: userNote
+        }]
+      };
+
+      const actionText = (type === "FULL") ? "全數到貨入庫" : (type === "SHORT_CLOSE" ? `實收 ${recQty}，短交 ${shortageQty} 結案不再補` : `實收 ${recQty}，短交 ${shortageQty} 保留在途`);
+      if (!confirm(`確定要將採購單 [${currentSinglePO.poNumber}] 執行【${actionText}】嗎？\n在庫庫存將即時增加 ${recQty}！`)) return;
+
+      showLoading(true, "正在執行點交入庫並重新試算推移...");
       google.script.run
         .withSuccessHandler(function(res) {
           showLoading(false);
           alert(res.message);
-          loadDashboard();
+          closeSingleReceiptModal();
+          loadDashboard(); // 重新整理所有看板與清冊
         })
         .withFailureHandler(function(err) {
           showLoading(false);
-          alert("核銷失敗: " + err);
+          alert("點交入庫失敗: " + err);
         })
-        .api_markProcurementReceived(poNumber);
+        .api_processGoodsReceipt(receiptPayload);
     }
 
     // 批次標記已到貨核銷
