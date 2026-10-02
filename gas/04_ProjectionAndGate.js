@@ -273,6 +273,86 @@ function getAllBookingRecords() {
     });
   });
 
+  // 動態庫存連動核銷試算：根據當前最新有效庫存與散客保底，即時重新評估每筆預約的燈號與缺口狀態
+  try {
+    const capacities = calculateProductCapacities();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // 依活動日先後排序模擬物料消耗 (較早的活動優先佔用庫存)
+    const sortedIndices = list.map((item, idx) => ({ idx, date: item.eventDate }))
+      .sort((a, b) => (a.date > b.date ? 1 : (a.date < b.date ? -1 : 0)));
+
+    const consumedMap = {}; // productName -> 已佔用套數
+    let needSyncToSheet = false;
+    const statusUpdates = []; // { row, light, status }
+
+    sortedIndices.forEach(({ idx }) => {
+      const item = list[idx];
+      const prodName = item.productName;
+      if (!consumedMap[prodName]) consumedMap[prodName] = 0;
+
+      // 匹配對應的體驗商品方案
+      let targetProd = null;
+      Object.keys(capacities).forEach(id => {
+        const p = capacities[id];
+        if (p.productName === prodName || prodName.includes(p.productName) || p.productName.includes(prodName)) {
+          targetProd = p;
+        }
+      });
+
+      if (targetProd) {
+        const parts = item.eventDate.split("/");
+        const eventDateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        const daysDiff = Math.round((eventDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const floor = getSafetyFloor(eventDateObj);
+        const totalCap = targetProd.maxCapacity || 0;
+
+        let newLight = "GREEN";
+        let newStatus = "無須採購 (庫存充裕)";
+
+        if (daysDiff > 45) {
+          // 距今 > 45 天，交期充裕，排單無限制
+          newLight = "GREEN";
+          newStatus = "無須採購 (庫存充裕)";
+        } else {
+          const availBefore = Math.max(0, totalCap - floor - consumedMap[prodName]);
+          if (item.qty <= availBefore) {
+            // 最新庫存已完全滿足！缺口自動消除
+            newLight = "GREEN";
+            newStatus = "無須採購 (庫存充裕)";
+            consumedMap[prodName] += item.qty;
+          } else {
+            // 依然有缺口
+            const shortage = item.qty - availBefore;
+            newLight = (daysDiff < CONFIG.LEAD_TIME_DAYS) ? "RED" : "YELLOW";
+            const latestOrderDate = new Date(eventDateObj.getTime() - (CONFIG.LEAD_TIME_DAYS * 24 * 60 * 60 * 1000));
+            const latestOrderDateStr = Utilities.formatDate(latestOrderDate, "Asia/Taipei", "yyyy/MM/dd");
+            newStatus = `⚠️ 尚缺 ${shortage} 套 (最晚叫貨: ${latestOrderDateStr})`;
+            consumedMap[prodName] += availBefore;
+          }
+        }
+
+        if (item.light !== newLight || item.procurementStatus !== newStatus) {
+          item.light = newLight;
+          item.procurementStatus = newStatus;
+          statusUpdates.push({ row: item.rowIndex, light: newLight, status: newStatus });
+          needSyncToSheet = true;
+        }
+      }
+    });
+
+    // 若狀態有更新，非同步同步寫回試算表保持資料一致
+    if (needSyncToSheet && statusUpdates.length > 0) {
+      statusUpdates.forEach(u => {
+        bkSheet.getRange(u.row, 8).setValue(u.light);
+        bkSheet.getRange(u.row, 9).setValue(u.status);
+      });
+    }
+  } catch (syncErr) {
+    // 容錯機制：若動態計算有微小偏差，不影響清單回傳
+  }
+
   return list;
 }
 

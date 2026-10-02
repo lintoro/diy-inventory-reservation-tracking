@@ -3087,7 +3087,8 @@
 
       tbody.innerHTML = bookings.map(b => {
         let lightTag = `<span class="status-badge ${b.light}">${b.light === "YELLOW" ? "🟡需叫貨補料" : (b.light === "RED" ? "🔴額滿禁接" : "🟢庫存充足")}</span>`;
-        let statusText = b.procurementStatus ? `<div style="font-size:11px; color:#b45309; font-weight:600; margin-top:3px;">${b.procurementStatus}</div>` : '';
+        let statusColor = (b.light === "GREEN") ? "#64748b" : "#b45309";
+        let statusText = b.procurementStatus ? `<div style="font-size:11px; color:${statusColor}; font-weight:600; margin-top:3px;">${b.procurementStatus}</div>` : '';
 
         return `
           <tr>
