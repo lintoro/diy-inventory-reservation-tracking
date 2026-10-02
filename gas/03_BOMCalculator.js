@@ -262,10 +262,13 @@ function calculateProductCapacities(inventoryList) {
       prodBomMap[r.productId].push(r);
     });
 
+    // 動態建立內建商品 ID 集合（從 CONFIG.PRODUCTS 讀取，不寫死 ID 範圍）
+    const builtinIds = new Set(CONFIG.PRODUCTS.map(p => String(p.id)));
+
     allProducts.forEach(prod => {
       const pId = String(prod.id);
-      // 若為預設 1~6 號已計算，僅在其名稱或配方有微調時補充資訊；若為新自訂商品則執行完整動態短板
-      if (["1", "2", "3", "4", "5", "6"].includes(pId)) {
+      // 若為內建商品（已在 calculateProductCapacities 上方處理），僅補充動態更名
+      if (builtinIds.has(pId)) {
         if (results[pId]) {
           results[pId].productName = prod.name; // 支援動態更名
         }

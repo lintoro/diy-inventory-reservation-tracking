@@ -189,5 +189,27 @@
   - 徹底移除「6 大體驗方案」寫死字樣：標題與看板全面改為「📊 體驗方案可用組數與用料抽屜」與「各體驗方案組數狀況」，支援動態商品無縫擴充。
   - 升級用料抽屜為 7 欄式三軌庫存透視：同時顯示【單份需用】、【系統數字 (ERP 640倉)】、【現場盤點實數 (標註實盤採信或未更動)】、【計算生效在庫】、【換算可做】與【採購狀態】，嚴格遵循「實盤優先，無更動自動帶入系統」之融合計算原則。
   - 新增 Phase 11 自動化單元測試套件 `test_Phase11_DateProjectionAndTriTrackInventory()` 並加入試算表 `onOpen()` 自訂選單第 12 項。
-  - 重新部署 Google Apps Script Web App 正式版本至 **`@11`**。
+- [x] 完成 Phase 20：
+  - **全系統寫死固定值深度排查與全面動態化**：
+    - 接單表單商品 `<select>` 移除硬編碼靜態 option，改由 `renderBookingProductSelect` 動態注入。
+    - `isBuiltin` 屬性由後端 `getDynamicProductsAndBOM()` 自動動態判斷並標記，前端改為讀取 `!!p.isBuiltin`，支援任意自訂商品擴充。
+    - BOM 配方維護分類 fallback 改為空陣列，防範舊硬編碼分類污染。
+    - 45 天動態推移改以 `Object.keys(capacities)` 動態迭代所有商品，自訂商品自動入表，表頭欄位同步動態重構。
+    - 試算表自訂選單提示字串改為調用 `getSafetyFloorConfig()` 動態顯示平日/假日散客保底底線。
+    - 儀表板近期預約 30 天視窗常數化為 `CONFIG.DASHBOARD_RECENT_DAYS`。
+    - 成功部署更新至 Version **`@27`**。
+- [x] 完成 Phase 21：
+  - **預約清冊日期升冪排序（較前在最上）**：
+    - 後端 `api_getBookingList()` 移除 `list.reverse()`，改依活動日期 `eventDate` 升冪排序（由近到遠）。
+    - 前端 `filterBookingTable()` 同步實施活動日期升冪排列，即將舉行的活動優先置頂顯示。
+  - **預約日期已過不顯示在欄位上**：
+    - 後端 `api_getBookingList()` 與前端清冊自動過濾掉 `eventDate < 今日` 的歷史紀錄，清冊欄位僅呈現有效未來預約。
+    - 後端動態庫存核銷試算中，若 `daysDiff < 0` 自動標記為歷史紀錄，**不累積扣減庫存**，杜絕過去活動佔用未來庫存與誤亮紅燈。
+  - **預約單號防重複防呆機制**：
+    - 前端送單成功後強制清空單號輸入框，並以 `initDefaultBookingNo(true)` 自動生成全新單號，徹底根除連續建單全部重複單號之重大 Bug。
+    - 後端 `submitBookingRecord` 增加單號重複防護，若遇到重複單號自動追加隨機後綴確保唯一性。
+  - **精準列操作（編輯與取消）**：
+    - 前端清冊操作按鈕傳入 `b.rowIndex`，Modal 增加隱藏欄位 `edit-bk-row-index`。
+    - 後端 `updateBookingRecord` 與 `deleteBookingRecord` 優先以 `rowIndex` 命中操作，確保歷史相同單號資料每一筆皆能獨立編輯與取消。
+  - 成功部署更新至 Version **`@28`**。
 

@@ -774,6 +774,7 @@
       <div class="form-group">
         <label class="form-label">預約單號 (唯讀)</label>
         <input type="text" id="edit-bk-no" class="form-input" readonly style="background:#f1f5f9; color:#64748b; font-weight:700;">
+        <input type="hidden" id="edit-bk-row-index">
       </div>
       <div class="grid grid-2" style="gap: 12px;">
         <div class="form-group">
@@ -952,12 +953,7 @@
               <div class="form-group">
                 <label class="form-label">體驗方案商品</label>
                 <select id="bk-product" class="form-select" onchange="runLiveEligibilityCheck()">
-                  <option value="1">1. 手能生巧 (HTB-50)</option>
-                  <option value="2">2. 繪聲繪影 - 胖胖盒款</option>
-                  <option value="3">3. 繪聲繪影 - TB-200款</option>
-                  <option value="4">4. 繪聲繪影 - TB-9款</option>
-                  <option value="5" selected>5. 旁敲側擊 (折疊籃 6 部件短板)</option>
-                  <option value="6">6. 請多紙膠 (CTB-3215L 潘朵拉盒)</option>
+                  <option value="">載入商品中...</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1692,14 +1688,14 @@
       initProjectionDateSelect();
     }
 
-    function initDefaultBookingNo() {
+    function initDefaultBookingNo(force) {
       const now = new Date();
       const y = now.getFullYear();
       const m = String(now.getMonth() + 1).padStart(2, '0');
       const d = String(now.getDate()).padStart(2, '0');
       const r = String(Math.floor(Math.random() * 900) + 100);
       const input = document.getElementById("bk-no");
-      if (input && !input.value) {
+      if (input && (force === true || !input.value)) {
         input.value = `BK-${y}${m}${d}-${r}`;
       }
     }
@@ -3043,15 +3039,29 @@
       }
     }
 
-    // 即時篩選清冊 (關鍵字 + 燈號狀態)
+    // 即時篩選清冊 (關鍵字 + 燈號狀態 + 排除過期預約 + 日期較前在最上方)
     function filterBookingTable() {
       const keyword = (document.getElementById("booking-search-input") ? document.getElementById("booking-search-input").value : "").trim().toLowerCase();
       const statusFilter = (document.getElementById("booking-filter-status") ? document.getElementById("booking-filter-status").value : "ALL");
 
+      // 取得今天日期字串 (yyyy/MM/dd)
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+
       let filtered = cachedBookingList || [];
+
+      // 1. 預約日期已過的不用再顯示在欄位上 (過濾 eventDate < 今天)
+      filtered = filtered.filter(b => {
+        const bDate = String(b.eventDate || "").replace(/-/g, "/").substring(0, 10);
+        return bDate >= todayStr;
+      });
+
+      // 2. 狀態燈號篩選
       if (statusFilter !== "ALL") {
         filtered = filtered.filter(b => b.light === statusFilter);
       }
+
+      // 3. 關鍵字搜尋
       if (keyword) {
         filtered = filtered.filter(b => 
           String(b.bookingNo || "").toLowerCase().includes(keyword) ||
@@ -3063,12 +3073,21 @@
         );
       }
 
+      // 4. 排序：活動日期較前的在最上方 (由近到遠升冪排序)
+      filtered.sort((a, b) => {
+        const d1 = String(a.eventDate || "").replace(/-/g, "/");
+        const d2 = String(b.eventDate || "").replace(/-/g, "/");
+        const diff = d1.localeCompare(d2);
+        if (diff !== 0) return diff;
+        return String(a.createdAt || a.bookingNo || "").localeCompare(String(b.createdAt || b.bookingNo || ""));
+      });
+
       const totalBadge = document.getElementById("booking-total-badge");
       if (totalBadge) {
         if (keyword || statusFilter !== "ALL") {
-          totalBadge.innerText = `符合 ${filtered.length} 筆 (總共 ${cachedBookingList.length} 筆)`;
+          totalBadge.innerText = `符合 ${filtered.length} 筆 (有效共 ${filtered.length} 筆)`;
         } else {
-          totalBadge.innerText = `共 ${cachedBookingList.length} 筆預約`;
+          totalBadge.innerText = `共 ${filtered.length} 筆預約`;
         }
       }
 
@@ -3119,10 +3138,10 @@
             </td>
             <td style="text-align:center; white-space:nowrap;">
               <div style="display:inline-flex; gap:6px;">
-                <button class="btn-action-edit" onclick="openBookingEditModal('${b.bookingNo}')" title="修改預約內容">
+                <button class="btn-action-edit" onclick="openBookingEditModal('${b.bookingNo}', ${b.rowIndex})" title="修改預約內容">
                   ✏️ 編輯
                 </button>
-                <button class="btn-action-delete" onclick="deleteBookingItem('${b.bookingNo}')" title="取消此筆預約">
+                <button class="btn-action-delete" onclick="deleteBookingItem('${b.bookingNo}', ${b.rowIndex})" title="取消此筆預約">
                   🗑️ 取消
                 </button>
               </div>
@@ -3162,13 +3181,19 @@
     }
 
     // 開啟預約編輯彈窗
-    function openBookingEditModal(bookingNo) {
-      const item = cachedBookingList.find(b => b.bookingNo === bookingNo);
+    // 開啟預約編輯彈窗 (支援 rowIndex 優先定位)
+    function openBookingEditModal(bookingNo, rowIndex) {
+      const item = (rowIndex && cachedBookingList)
+        ? (cachedBookingList.find(b => b.rowIndex === rowIndex) || cachedBookingList.find(b => b.bookingNo === bookingNo))
+        : (cachedBookingList ? cachedBookingList.find(b => b.bookingNo === bookingNo) : null);
       if (!item) {
         alert("找不到此預約紀錄！");
         return;
       }
 
+      if (document.getElementById("edit-bk-row-index")) {
+        document.getElementById("edit-bk-row-index").value = item.rowIndex || "";
+      }
       document.getElementById("edit-bk-no").value = item.bookingNo;
       document.getElementById("edit-bk-date").value = item.eventDate.replace(/\//g, "-");
       document.getElementById("edit-bk-qty").value = item.qty;
@@ -3178,10 +3203,15 @@
 
       // 填入商品選單
       const select = document.getElementById("edit-bk-product");
-      const products = (cachedDashboardData && cachedDashboardData.products) ? cachedDashboardData.products : CONFIG_PRODUCTS_FALLBACK;
-      select.innerHTML = products.map(p => `
-        <option value="${p.name}" ${String(item.productName || '').includes(p.name) ? 'selected' : ''}>${p.name}</option>
-      `).join("");
+      const products = (cachedDashboardData && cachedDashboardData.products && cachedDashboardData.products.length > 0)
+        ? cachedDashboardData.products : [];
+      if (products.length === 0) {
+        select.innerHTML = '<option value="">⚠ 無商品資料，請先返回重新整理</option>';
+      } else {
+        select.innerHTML = products.map(p => `
+          <option value="${p.name}" ${String(item.productName || '').includes(p.name) ? 'selected' : ''}>${p.name}</option>
+        `).join("");
+      }
 
       document.getElementById("modal-booking-editor").style.display = "flex";
     }
@@ -3192,6 +3222,7 @@
 
     // 送出預約修改
     function submitUpdateBooking() {
+      const rowIndex = document.getElementById("edit-bk-row-index") ? document.getElementById("edit-bk-row-index").value : "";
       const bookingNo = document.getElementById("edit-bk-no").value.trim();
       const eventDate = document.getElementById("edit-bk-date").value;
       const qty = Number(document.getElementById("edit-bk-qty").value) || 0;
@@ -3223,6 +3254,7 @@
         })
         .api_updateBooking({
           bookingNo: bookingNo,
+          rowIndex: rowIndex,
           eventDate: eventDate,
           qty: qty,
           productName: productName,
@@ -3232,8 +3264,8 @@
         });
     }
 
-    // 刪除預約
-    function deleteBookingItem(bookingNo) {
+    // 刪除預約 (支援 rowIndex)
+    function deleteBookingItem(bookingNo, rowIndex) {
       if (!confirm(`確定要刪除預約單 [${bookingNo}] 嗎？\n刪除後預約套數將立即釋放回庫存中！`)) return;
 
       showLoading(true, `正在刪除預約單 [${bookingNo}]...`);
@@ -3251,7 +3283,7 @@
           showLoading(false);
           alert("刪除預約失敗: " + err);
         })
-        .api_deleteBooking(bookingNo);
+        .api_deleteBooking(bookingNo, rowIndex);
     }
 
     // ==================== 🎨 商品與 BOM 配方維護中心 JS ====================
@@ -3291,7 +3323,7 @@
 
       container.innerHTML = products.map(p => {
         const rules = ruleMap[p.id] || [];
-        const isBuiltin = ["1","2","3","4","5","6"].includes(p.id);
+        const isBuiltin = !!p.isBuiltin;  // 由後端 getDynamicProductsAndBOM 動態標記，不寫死 ID 範圍
         const rulesBadges = rules.map(r => `
           <span style="display:inline-block; background:#f1f5f9; border:1px solid #cbd5e1; padding:3px 8px; border-radius:6px; font-size:12px; margin:2px 4px 2px 0;">
             <b>${r.category}</b> × ${r.qty} <span style="color:#64748b;">(${formatSharedLabel(r.note || '')})</span>
@@ -3380,10 +3412,10 @@
 
     function addBOMItemRow(selectedCategory, qty, note) {
       const tbody = document.getElementById("bom-items-tbody");
-      const cats = (cachedBOMData && cachedBOMData.availableCategories) ? [...cachedBOMData.availableCategories] : [
-        "手能生巧", "旁敲側擊A", "旁敲側擊B", "旁敲側擊C", "旁敲側擊D", "旁敲側擊E", "旁敲側擊F",
-        "繪聲繪影A", "繪聲繪影B", "繪聲繪影C_胖胖盒", "繪聲繪影C_TB200", "繪聲繪影C_TB9", "請多紙膠A"
-      ];
+      // fallback 改為空陣列，避免顯示過時的寫死分類清單；若真的無資料，select 會顯示「無可用分類，請重新整理」
+      const cats = (cachedBOMData && cachedBOMData.availableCategories && cachedBOMData.availableCategories.length > 0)
+        ? [...cachedBOMData.availableCategories]
+        : [];
       const masterMaterials = (cachedBOMData && cachedBOMData.masterMaterials) ? [...cachedBOMData.masterMaterials] : [];
 
       // 依名稱排序分類群組 (問題 3)
@@ -3398,6 +3430,9 @@
 
       let matchedAny = false;
       let optionsHtml = '<optgroup label="📦 材料種類代碼 (總量池群組)">';
+      if (cats.length === 0) {
+        optionsHtml += '<option value="" disabled>⚠ 無可用分類，請重新整理頁面</option>';
+      }
       cats.forEach(c => {
         const isSel = (selectedCategory === c);
         if (isSel) matchedAny = true;
@@ -3914,7 +3949,9 @@
           document.getElementById("bk-group").value = "";
           document.getElementById("bk-phone").value = "";
           document.getElementById("bk-note").value = "";
-          initDefaultBookingNo(); // 重新產生下一組單號
+          const noInput = document.getElementById("bk-no");
+          if (noInput) noInput.value = "";
+          initDefaultBookingNo(true); // 強制產生下一組全新單號，避免重複
           loadDashboard();
           loadBookingList();
         })

@@ -191,9 +191,20 @@ function submitBookingRecord(eventDate, productId, bookingQty, groupName, phone,
   
   // 決定預約單號 (若有傳入自訂單號則優先採用)
   let bookingNo = String(customBookingNo || "").trim();
+  const lastRow = bkSheet.getLastRow();
+  const existingNos = (lastRow > 1) 
+    ? bkSheet.getRange(2, 1, lastRow - 1, 1).getValues().map(r => String(r[0] || "").trim())
+    : [];
+
   if (!bookingNo) {
-    const bkCount = bkSheet.getLastRow();
+    const bkCount = lastRow;
     bookingNo = `BK-${dateCompact}-${String(bkCount).padStart(3, "0")}`;
+  }
+
+  // 防重複檢查：若單號已在資料庫中存在，自動附加隨機後綴確保唯一性
+  if (existingNos.includes(bookingNo)) {
+    const suffix = String(Math.floor(Math.random() * 900) + 100);
+    bookingNo = `${bookingNo}-${suffix}`;
   }
 
   // 缺口提醒狀態 (取代原先的自動叫貨機制)
@@ -311,11 +322,18 @@ function getAllBookingRecords() {
         let newLight = "GREEN";
         let newStatus = "無須採購 (庫存充裕)";
 
-        if (daysDiff > 45) {
+        if (daysDiff < 0) {
+          // 活動日期已過：屬於歷史預約，不佔用當前現有可用庫存，也不提示採購
+          item.isPast = true;
+          newLight = "CLOSED";
+          newStatus = "活動已結束 (歷史紀錄)";
+        } else if (daysDiff > 45) {
           // 距今 > 45 天，交期充裕，排單無限制
+          item.isPast = false;
           newLight = "GREEN";
           newStatus = "無須採購 (庫存充裕)";
         } else {
+          item.isPast = false;
           const availBefore = Math.max(0, totalCap - floor - consumedMap[prodName]);
           if (item.qty <= availBefore) {
             // 最新庫存已完全滿足！缺口自動消除
@@ -371,11 +389,21 @@ function updateBookingRecord(data) {
 
   const rows = bkSheet.getRange(2, 1, lastRow - 1, 10).getValues();
   let targetRowIndex = -1;
+  const numRow = Number(data.rowIndex);
+  if (numRow >= 2 && numRow <= lastRow) {
+    const checkNo = String(bkSheet.getRange(numRow, 1).getValue()).trim();
+    if (checkNo === cleanNo || !cleanNo) {
+      targetRowIndex = numRow;
+    }
+  }
 
-  for (let i = 0; i < rows.length; i++) {
-    if (String(rows[i][0]).trim() === cleanNo) {
-      targetRowIndex = i + 2;
-      break;
+  if (targetRowIndex === -1) {
+    const rows = bkSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === cleanNo) {
+        targetRowIndex = i + 2;
+        break;
+      }
     }
   }
 
@@ -410,28 +438,45 @@ function updateBookingRecord(data) {
 }
 
 /**
- * 刪除指定預約紀錄
+ * 刪除指定預約紀錄 (支援指定 rowIndex 避免同單號誤刪)
  * @param {string} bookingNo 預約單號
+ * @param {number} [rowIndex] 試算表列號
  */
-function deleteBookingRecord(bookingNo) {
+function deleteBookingRecord(bookingNo, rowIndex) {
   const cleanNo = String(bookingNo || "").trim();
-  if (!cleanNo) return { success: false, message: "預約單號不得為空" };
+  if (!cleanNo && !rowIndex) return { success: false, message: "預約單號或列號不得為空" };
 
   const ss = getSpreadsheet();
   const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
   const lastRow = bkSheet.getLastRow();
   if (lastRow <= 1) return { success: false, message: "查無預約紀錄" };
 
-  const rows = bkSheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  for (let i = 0; i < rows.length; i++) {
-    if (String(rows[i][0]).trim() === cleanNo) {
-      bkSheet.deleteRow(i + 2);
-      generate45DaysProjection();
-      return {
-        success: true,
-        message: `預約單 [${cleanNo}] 已成功刪除，庫存配額已即時釋放！`
-      };
+  let rowToDelete = -1;
+  const numRow = Number(rowIndex);
+  if (numRow >= 2 && numRow <= lastRow) {
+    const checkNo = String(bkSheet.getRange(numRow, 1).getValue()).trim();
+    if (checkNo === cleanNo || !cleanNo) {
+      rowToDelete = numRow;
     }
+  }
+
+  if (rowToDelete === -1 && cleanNo) {
+    const rows = bkSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === cleanNo) {
+        rowToDelete = i + 2;
+        break;
+      }
+    }
+  }
+
+  if (rowToDelete !== -1) {
+    bkSheet.deleteRow(rowToDelete);
+    generate45DaysProjection();
+    return {
+      success: true,
+      message: `預約單 [${cleanNo}] 已成功刪除，庫存配額已即時釋放！`
+    };
   }
 
   return { success: false, message: `找不到預約單號 [${cleanNo}]` };
@@ -449,6 +494,13 @@ function generate45DaysProjection() {
   const now = new Date();
   const nowStr = Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
   
+  // 動態取得所有商品 ID（依 ID 數值遞增排序，確保欄位穩定）
+  const productIds = Object.keys(capacities).sort((a, b) => {
+    const numA = isNaN(Number(a)) ? 9999 : Number(a);
+    const numB = isNaN(Number(b)) ? 9999 : Number(b);
+    return numA - numB;
+  });
+
   const daysList = [];
   const weekDayNames = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
 
@@ -460,41 +512,40 @@ function generate45DaysProjection() {
     const safety = getSafetyFloor(targetDate);
     const typeStr = isWk ? `假日 (保底${safety})` : `平日 (保底${safety})`;
 
-    // 計算各商品扣除散客保底後的可用量
-    const p1Avail = Math.max(0, capacities["1"].maxCapacity - safety);
-    const p2Avail = Math.max(0, capacities["2"].maxCapacity - safety);
-    const p3Avail = Math.max(0, capacities["3"].maxCapacity - safety);
-    const p4Avail = Math.max(0, capacities["4"].maxCapacity - safety);
-    const p5Avail = Math.max(0, capacities["5"].maxCapacity - safety);
-    const p6Avail = Math.max(0, capacities["6"].maxCapacity - safety);
+    // 動態計算各商品扣除散客保底後的可用量
+    const availList = productIds.map(pId => {
+      const cap = capacities[pId];
+      return Math.max(0, (cap ? cap.maxCapacity : 0) - safety);
+    });
 
-    daysList.push([
-      dateStr,
-      dayOfWeek,
-      typeStr,
-      p1Avail,
-      p2Avail,
-      p3Avail,
-      p4Avail,
-      p5Avail,
-      p6Avail,
-      nowStr
-    ]);
+    daysList.push([dateStr, dayOfWeek, typeStr, ...availList, nowStr]);
   }
 
-  // 寫入工作表 (保留表頭)
+  // 動態重建標頭列（確保自訂商品欄位也出現）
+  const headerBase = ["日期", "星期", "日期類型"];
+  const headerProducts = productIds.map(pId => {
+    const cap = capacities[pId];
+    return cap ? `${pId}. ${cap.productName || pId}（可接組數）` : `${pId}（可接組數）`;
+  });
+  const header = [...headerBase, ...headerProducts, "更新時間"];
+  
+  // 清除並重寫（包含表頭）
+  const totalCols = header.length;
   const maxRows = projSheet.getLastRow();
-  if (maxRows > 1) {
-    projSheet.getRange(2, 1, maxRows - 1, projSheet.getMaxColumns()).clearContent();
+  if (maxRows > 0) {
+    projSheet.getRange(1, 1, maxRows, projSheet.getMaxColumns()).clearContent();
   }
-
-  projSheet.getRange(2, 1, daysList.length, daysList[0].length).setValues(daysList);
-  projSheet.autoResizeColumns(1, 10);
+  projSheet.getRange(1, 1, 1, totalCols).setValues([header]);
+  
+  if (daysList.length > 0) {
+    projSheet.getRange(2, 1, daysList.length, daysList[0].length).setValues(daysList);
+  }
+  projSheet.autoResizeColumns(1, totalCols);
 
   return {
     success: true,
     count: daysList.length,
-    message: `成功推移計算未來 ${CONFIG.PROJECTION_DAYS} 天庫存可用量`
+    message: `成功推移計算未來 ${CONFIG.PROJECTION_DAYS} 天庫存可用量（共 ${productIds.length} 項方案）`
   };
 }
 
@@ -504,5 +555,6 @@ function generate45DaysProjection() {
 function menu_refreshProjection() {
   const ui = SpreadsheetApp.getUi();
   const res = generate45DaysProjection();
-  ui.alert("📈 45 天動態推移底表刷新完成", `${res.message}，已扣除平日(10)/假日(35)散客保底底線！\n請切換至 [07_45天動態推移底表] 檢視。`, ui.ButtonSet.OK);
+  const floorCfg = getSafetyFloorConfig();
+  ui.alert("📈 45 天動態推移底表刷新完成", `${res.message}，已扣除平日(${floorCfg.weekday})/假日(${floorCfg.weekend})散客保底底線！\n請切換至 [07_45天動態推移底表] 檢視。`, ui.ButtonSet.OK);
 }

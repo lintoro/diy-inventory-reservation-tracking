@@ -51,8 +51,8 @@ function api_getDashboardOverview() {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const in30Days = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-    in30Days.setHours(23, 59, 59, 999);
+    const inRecentDays = new Date(today.getTime() + CONFIG.DASHBOARD_RECENT_DAYS * 24 * 60 * 60 * 1000);
+    inRecentDays.setHours(23, 59, 59, 999);
 
     if (bkLastRow > 1) {
       const bkRows = bkSheet.getRange(2, 1, bkLastRow - 1, 9).getValues();
@@ -65,7 +65,7 @@ function api_getDashboardOverview() {
         let evDate = r[1] instanceof Date ? r[1] : new Date(String(r[1]));
         if (!isNaN(evDate.getTime())) {
           evDate.setHours(0, 0, 0, 0);
-          if (evDate >= today && evDate <= in30Days) {
+          if (evDate >= today && evDate <= inRecentDays) {
             let dateStr = Utilities.formatDate(evDate, "Asia/Taipei", "yyyy/MM/dd");
             recentBookings.push({
               bookingNo: r[0],
@@ -111,6 +111,8 @@ function api_getDashboardOverview() {
           note: poNote
         });
       });
+      // 依預計到貨日由近到遠升冪排序
+      pendingPOs.sort((a, b) => String(a.replenishmentDate || "").localeCompare(String(b.replenishmentDate || "")));
     }
 
     // 散客保底配置
@@ -584,12 +586,41 @@ function api_getProcurementList() {
 /**
  * API: 取得業務預約明細清冊 (供編輯與查看)
  */
-function api_getBookingList() {
+/**
+ * API: 取得業務預約明細清冊 (供編輯與查看)
+ * 規則：
+ * 1. 排序為活動日期較前的在最上方 (由近到遠升冪排序)
+ * 2. 預約日期已過的不用再顯示在欄位上 (過濾 eventDate < 今日)
+ * @param {boolean} [includePast=false] 是否包含已結束之歷史預約
+ */
+function api_getBookingList(includePast) {
   try {
     const list = getAllBookingRecords();
+    const today = new Date();
+    const todayStr = Utilities.formatDate(today, "Asia/Taipei", "yyyy/MM/dd");
+    
+    // 1. 過濾：預設排除活動日期已過之預約紀錄
+    const validList = (includePast === true) 
+      ? list 
+      : list.filter(b => {
+          const bDate = String(b.eventDate || "").replace(/-/g, "/").substring(0, 10);
+          return bDate >= todayStr;
+        });
+
+    // 2. 排序：活動日期較前的在最上方 (由近到遠升冪排序)
+    validList.sort((a, b) => {
+      const d1 = String(a.eventDate || "").replace(/-/g, "/");
+      const d2 = String(b.eventDate || "").replace(/-/g, "/");
+      const diff = d1.localeCompare(d2);
+      if (diff !== 0) return diff;
+      return String(a.createdAt || a.bookingNo || "").localeCompare(String(b.createdAt || b.bookingNo || ""));
+    });
+
     return {
       success: true,
-      bookings: list.reverse() // 最新預約排前面
+      bookings: validList,
+      totalCount: list.length,
+      activeCount: validList.length
     };
   } catch (err) {
     return { success: false, message: "讀取預約清冊失敗: " + err.message };
@@ -598,7 +629,7 @@ function api_getBookingList() {
 
 /**
  * API: 修改既有預約單
- * @param {Object} data { bookingNo, eventDate, productName, qty, groupName, phone, note }
+ * @param {Object} data { bookingNo, rowIndex, eventDate, productName, qty, groupName, phone, note }
  */
 function api_updateBooking(data) {
   try {
@@ -609,12 +640,13 @@ function api_updateBooking(data) {
 }
 
 /**
- * API: 刪除既有預約單
+ * API: 刪除既有預約單 (支援 rowIndex 避免同單號誤刪)
  * @param {string} bookingNo 預約單號
+ * @param {number} [rowIndex] 試算表列號
  */
-function api_deleteBooking(bookingNo) {
+function api_deleteBooking(bookingNo, rowIndex) {
   try {
-    return deleteBookingRecord(bookingNo);
+    return deleteBookingRecord(bookingNo, rowIndex);
   } catch (err) {
     return { success: false, message: "刪除預約失敗: " + err.message };
   }

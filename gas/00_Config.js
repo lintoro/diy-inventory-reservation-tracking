@@ -52,14 +52,17 @@ const CONFIG = {
   // 滾動推移預測天數
   PROJECTION_DAYS: 45,
 
+  // 儀表板「近期預約」顯示視窗（天數）
+  DASHBOARD_RECENT_DAYS: 30,
+
   // 6 大銷售體驗商品
   PRODUCTS: [
-    { id: "1", name: "手能生巧", desc: "HTB-50 經典3合1小工具組裝" },
-    { id: "2", name: "繪聲繪影 - 胖胖盒款", desc: "胖胖盒 + 框圖A7 + 顏料四色" },
-    { id: "3", name: "繪聲繪影 - TB-200款", desc: "TB-200工具箱 + 框圖A7 + 顏料四色" },
-    { id: "4", name: "繪聲繪影 - TB-9款", desc: "TB-9隨手工具箱 + 框圖A7 + 顏料四色" },
-    { id: "5", name: "旁敲側擊 (折疊籃)", desc: "FB-4531折疊籃，框底側板長短栓多色池組裝" },
-    { id: "6", name: "請多紙膠", desc: "CTB-3215L 潘朵拉盒 + 紙膠帶" }
+    { id: "1", name: "手能生巧", desc: "HTB-50 經典3合1小工具組裝", isBuiltin: true },
+    { id: "2", name: "繪聲繪影 - 胖胖盒款", desc: "胖胖盒 + 框圖A7 + 顏料四色", isBuiltin: true },
+    { id: "3", name: "繪聲繪影 - TB-200款", desc: "TB-200工具箱 + 框圖A7 + 顏料四色", isBuiltin: true },
+    { id: "4", name: "繪聲繪影 - TB-9款", desc: "TB-9隨手工具箱 + 框圖A7 + 顏料四色", isBuiltin: true },
+    { id: "5", name: "旁敲側擊 (折疊籃)", desc: "FB-4531折疊籃，框底側板長短栓多色池組裝", isBuiltin: true },
+    { id: "6", name: "請多紙膠", desc: "CTB-3215L 潘朵拉盒 + 紙膠帶", isBuiltin: true }
   ],
 
   // 28 項核心物料主檔資料 (依據 DIY參考資料20260922.xlsx 定義)
@@ -245,7 +248,8 @@ function getDynamicProductsAndBOM() {
         productsMap[pId] = {
           id: pId,
           name: pName,
-          desc: defaultProd ? defaultProd.desc : `${pName} DIY體驗材料包`
+          desc: defaultProd ? defaultProd.desc : `${pName} DIY體驗材料包`,
+          isBuiltin: !!defaultProd  // 在 CONFIG.PRODUCTS 中有定義者為內建商品
         };
       }
 

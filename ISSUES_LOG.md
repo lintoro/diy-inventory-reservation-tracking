@@ -357,3 +357,48 @@
 - **狀態**：🟢 已修復並部署至 Version @26 (2026-10-02)
 
 ---
+
+### ISSUE-028：系統中寫死固定的商品列表/ID判斷/BOM分類/推移欄位全面動態化
+- **問題描述**：
+  - 接單表單商品選項寫死 6 個靜態 `<option>`，新增自訂商品後不顯示。
+  - `isBuiltin` 寫死 `["1"…"6"]`，BOM 材料分類 fallback 寫死 13 個舊分類。
+  - 45 天動態推移寫死 `p1Avail ~ p6Avail`，自訂商品不會出現在推移表。
+  - 試算表選單提示字串寫死平日(10)/假日(35)散客保底底線。
+- **根因分析**：
+  - 早期開發時為快速對齊企劃規格，部分邏輯以靜態值實作，未與後端動態主檔全面對齊。
+- **解決方案**：
+  - `gas/index.html`：接單表單商品 `<select>` 移除硬編碼，由 `renderBookingProductSelect` 動態注入。
+  - `gas/00_Config.js`：後端 `getDynamicProductsAndBOM()` 自動動態標記 `isBuiltin` 屬性，前端改為 `!!p.isBuiltin`。
+  - `gas/04_ProjectionAndGate.js`：45 天推移改以 `Object.keys(capacities)` 動態迭代所有商品方案，並動態重建表頭欄位；選單提示改調用 `getSafetyFloorConfig()` 動態顯示保底值。
+  - `gas/03_BOMCalculator.js`：改讀取 `CONFIG.PRODUCTS` 集合判斷內建商品。
+  - `gas/05_API.js`：30 天視窗常數化為 `CONFIG.DASHBOARD_RECENT_DAYS`。
+- **狀態**：🟢 已修復並部署至 Version @27 (2026-10-02)
+
+---
+
+### ISSUE-029：預約登記管理清冊排序倒置、過期預約未排除、連續建單單號重複與編輯/刪除誤操作
+- **問題描述**：
+  - 預約登記清冊依建單倒序呈現（`list.reverse()`），活動日期較晚的（如 10/23）反而排在最上方，日期較早的（如 10/14）被擠在下方。
+  - 活動日期已經過去的歷史預約未過濾，依然顯示在欄位中，且過去活動若庫存不足會誤亮紅燈並佔用現有可用庫存。
+  - 連續建立多筆預約時，前端未清空單號，導致多筆預約帶有相同單號（如全為 `BK-20260928-541`），進而在點擊「編輯」或「取消」時因單號重複而誤操作到第一筆。
+- **根因分析**：
+  - `05_API.js` 之 `api_getBookingList()` 採用 `list.reverse()` 回傳，未按活動日期升冪排列。
+  - `getAllBookingRecords()` 動態物料消耗模擬未區分 `daysDiff < 0`（已過去之活動），過去活動被納入 `consumedMap` 扣減庫存。
+  - 前端 `submitBookingForm()` 成功後未重設 `bk-no`，`initDefaultBookingNo` 判斷 `!input.value` 因而未生成新單號。
+  - 後端 `updateBookingRecord` 與 `deleteBookingRecord` 僅比對 `bookingNo`，遇重複單號時皆命中首列。
+- **解決方案**：
+  - **日期較前排在最上方**：
+    - 後端 `api_getBookingList()` 與前端 `filterBookingTable()` 統一採用活動日期升冪排序（`a.eventDate.localeCompare(b.eventDate)`），即將舉辦之活動永遠置頂。
+  - **預約日期已過不顯示**：
+    - 後端與前端過濾掉 `eventDate < 今日` 之預約，欄位上只顯示今天與未來的有效預約。
+    - `getAllBookingRecords()` 判斷 `daysDiff < 0` 時，標記 `item.isPast = true`，**不累積佔用庫存**，不跳採購提醒。
+  - **單號防重複防呆**：
+    - 前端送單成功後強制清空單號並以 `initDefaultBookingNo(true)` 重新產生全新單號。
+    - 後端 `submitBookingRecord` 檢查資料庫既有單號，若重複則自動追加隨機後綴確保唯一。
+  - **精準列操作**：
+    - 前端清冊按鈕傳遞 `b.rowIndex`，Modal 增加隱藏欄位 `edit-bk-row-index`。
+    - 後端 `updateBookingRecord` 與 `deleteBookingRecord` 優先以 `rowIndex` 命中操作，徹底消除同單號誤操作風險。
+- **狀態**：🟢 已修復並部署至 Version @28 (2026-10-02)
+
+
+---
