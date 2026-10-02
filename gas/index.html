@@ -2529,34 +2529,45 @@
 
     // 比對進貨明細與在途採購清冊，並打開比對確認彈窗
     function compareAndOpenReceiptModal(receiptMeta, items) {
-      const activePOs = (cachedPOList || []).filter(p => p.status !== "已到貨入庫" && p.status !== "已取消");
+      const activePOs = (cachedPOList || []).filter(p => {
+        const s = String(p.status || "").trim();
+        return !s.includes("已到貨") && !s.includes("已取消");
+      });
 
       let fullCount = 0;
       let shortCount = 0;
       let directCount = 0;
 
       const comparedItems = items.map(it => {
+        const itPo = String(it.poNumber || "").trim();
+        const itCode = String(it.itemCode || "").trim();
+        const itQty = Number(it.receivedQty) || 0;
+
         let matchedPO = null;
-        if (it.poNumber) {
-          matchedPO = activePOs.find(p => (p.poNumber === it.poNumber || p.poNumber.includes(it.poNumber) || it.poNumber.includes(p.poNumber)) && p.itemCode === it.itemCode);
+        if (itPo) {
+          matchedPO = activePOs.find(p => {
+            const pPo = String(p.poNumber || "").trim();
+            const pCode = String(p.itemCode || "").trim();
+            return (pPo === itPo || (pPo && itPo && (pPo.includes(itPo) || itPo.includes(pPo)))) && pCode === itCode;
+          });
         }
         // 若以單號找不到，嘗試以未結案品號兜底匹配
         if (!matchedPO) {
-          matchedPO = activePOs.find(p => p.itemCode === it.itemCode);
+          matchedPO = activePOs.find(p => String(p.itemCode || "").trim() === itCode);
         }
 
-        let originalPoQty = matchedPO ? matchedPO.qty : 0;
-        let poNo = matchedPO ? matchedPO.poNumber : (it.poNumber || "");
+        let originalPoQty = matchedPO ? (Number(matchedPO.qty) || 0) : 0;
+        let poNo = matchedPO ? String(matchedPO.poNumber || "") : itPo;
         let matchType = "DIRECT";
         let shortageQty = 0;
 
         if (matchedPO) {
-          if (it.receivedQty >= originalPoQty) {
+          if (itQty >= originalPoQty) {
             matchType = "FULL";
             fullCount++;
           } else {
             matchType = "SHORT_CLOSE"; // 短交預設結案不再補，防業務超賣
-            shortageQty = originalPoQty - it.receivedQty;
+            shortageQty = originalPoQty - itQty;
             shortCount++;
           }
         } else {
@@ -2565,10 +2576,10 @@
         }
 
         return {
-          itemCode: it.itemCode,
+          itemCode: itCode,
           itemName: it.itemName,
           spec: it.spec,
-          receivedQty: it.receivedQty,
+          receivedQty: itQty,
           poNumber: poNo,
           originalPoQty: originalPoQty,
           matchType: matchType,
@@ -2826,7 +2837,7 @@
       const select = document.getElementById("edit-bk-product");
       const products = (cachedDashboardData && cachedDashboardData.products) ? cachedDashboardData.products : CONFIG_PRODUCTS_FALLBACK;
       select.innerHTML = products.map(p => `
-        <option value="${p.name}" ${item.productName.includes(p.name) ? 'selected' : ''}>${p.name}</option>
+        <option value="${p.name}" ${String(item.productName || '').includes(p.name) ? 'selected' : ''}>${p.name}</option>
       `).join("");
 
       document.getElementById("modal-booking-editor").style.display = "flex";

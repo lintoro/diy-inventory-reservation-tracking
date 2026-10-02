@@ -220,3 +220,15 @@
 
 ---
 
+### ISSUE-019：進貨單比對在途清冊時單號為數值型別導致 p.poNumber.includes is not a function 錯誤
+- **問題描述**：
+  - 使用者在在途採購管理介面拖曳上傳《紙膠帶進貨單.XLSX》時，系統跳出錯誤彈窗：`進貨單檔案解析失敗: p.poNumber.includes is not a function`。
+- **根因分析**：
+  - 試算表在儲存純數字單號（如 `260904001`）時，Google Sheets API 與 SheetJS 預設將其解析為 JavaScript `Number` 型別。
+  - 後端 `pendingPOs` 封裝時直接傳遞原始值，前端在 `compareAndOpenReceiptModal` 執行 `p.poNumber.includes(...)` 時，因 `Number.prototype.includes` 不存在而拋出 TypeError。
+- **解決方案**：
+  - 後端 `gas/05_API.js` 之 `pendingPOs` 明確強制轉換：`poNumber: String(r[0] || "").trim()`, `itemCode: String(r[3] || "").trim()`, `qty: Number(r[5]) || 0`。
+  - 前端 `gas/index.html` 之 `compareAndOpenReceiptModal` 加上全型別安全防呆：所有 `poNumber`、`itemCode`、`status` 皆轉為 `String(...)` 後再比對，並加入未精確匹配單號時以品號兜底之雙重保險。
+- **狀態**：🟢 已修復並部署至 Version @17 (2026-10-02)
+
+---

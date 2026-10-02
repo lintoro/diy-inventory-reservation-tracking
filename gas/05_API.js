@@ -97,14 +97,14 @@ function api_getDashboardOverview() {
         let orderDateStr = r[1] instanceof Date ? Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd") : String(r[1] || "");
         let deadlineStr = r[2] instanceof Date ? Utilities.formatDate(r[2], "Asia/Taipei", "yyyy/MM/dd") : String(r[2] || "");
         pendingPOs.push({
-          poNumber: r[0],
+          poNumber: String(r[0] || "").trim(),
           orderDate: orderDateStr,
           deadline: deadlineStr,
-          itemCode: r[3],
-          itemName: r[4],
-          qty: r[5],
-          status: r[6],
-          bookingNo: r[7]
+          itemCode: String(r[3] || "").trim(),
+          itemName: String(r[4] || "").trim(),
+          qty: Number(r[5]) || 0,
+          status: String(r[6] || "").trim(),
+          bookingNo: String(r[7] || "").trim()
         });
       });
     }
@@ -842,7 +842,19 @@ function api_processGoodsReceipt(receiptData) {
           const rowCode = String(existingPoRows[i][3] || "").trim();
           const rowStatus = String(existingPoRows[i][6] || "").trim();
 
-          if ((rowPo === poNo || rowPo.includes(poNo) || poNo.includes(rowPo)) && rowCode === itemCode && !rowStatus.includes("已到貨")) {
+          if ((rowPo === poNo || (rowPo && poNo && (rowPo.includes(poNo) || poNo.includes(rowPo)))) && rowCode === itemCode && !rowStatus.includes("已到貨")) {
+            matchedIndex = i;
+            break;
+          }
+        }
+      }
+
+      // 若以單號找不到，嘗試以未結案品號兜底匹配
+      if (matchedIndex === -1) {
+        for (let i = 0; i < existingPoRows.length; i++) {
+          const rowCode = String(existingPoRows[i][3] || "").trim();
+          const rowStatus = String(existingPoRows[i][6] || "").trim();
+          if (rowCode === itemCode && !rowStatus.includes("已到貨")) {
             matchedIndex = i;
             break;
           }
