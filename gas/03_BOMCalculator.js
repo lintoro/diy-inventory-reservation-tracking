@@ -22,15 +22,21 @@ function calculateProductCapacities(inventoryList) {
     catMap[item.category].push(item);
   });
 
-  // 輔助函式：取得某材料種類的總庫存
+  // 輔助函式：取得某材料種類或品號的總庫存
   function getCategoryTotalQty(category) {
-    const items = catMap[category] || [];
+    let items = catMap[category] || [];
+    if (items.length === 0 && itemMap[category]) {
+      items = [itemMap[category]];
+    }
     return items.reduce((sum, it) => sum + (Number(it.effectiveQty) || 0), 0);
   }
 
-  // 輔助函式：取得某材料種類的完整庫存統計 (生效在庫、ERP帳面數、現場盤點數、在途未到貨補貨)
+  // 輔助函式：取得某材料種類或品號的完整庫存統計 (生效在庫、ERP帳面數、現場盤點數、在途未到貨補貨)
   function getCategoryStats(category) {
-    const items = catMap[category] || [];
+    let items = catMap[category] || [];
+    if (items.length === 0 && itemMap[category]) {
+      items = [itemMap[category]];
+    }
     let effectiveSum = 0;
     let erpSum = 0;
     let cycleCountSum = 0;

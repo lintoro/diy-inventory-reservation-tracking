@@ -624,17 +624,19 @@ function api_getAllProductsAndBOM() {
     const dyn = getDynamicProductsAndBOM();
     const dynamicMaterials = getDynamicMasterMaterials();
     
-    // 彙整所有可用的材料分類清單 (包含底表中所有已存在分類)
+    // 彙整所有可用的材料分類清單 (包含底表中所有已存在分類) 並依名稱排序
     const categoriesSet = new Set();
     dynamicMaterials.forEach(m => {
       if (m.category) categoriesSet.add(m.category);
     });
 
+    const sortedCategories = Array.from(categoriesSet).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+
     return {
       success: true,
       products: dyn.products,
       bomRules: dyn.bomRules,
-      availableCategories: Array.from(categoriesSet),
+      availableCategories: sortedCategories,
       masterMaterials: dynamicMaterials
     };
   } catch (err) {
@@ -653,10 +655,12 @@ function api_getAllMaterials() {
       if (m.category) categoriesSet.add(m.category);
     });
 
+    const sortedCategories = Array.from(categoriesSet).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+
     return {
       success: true,
       materials: list,
-      categories: Array.from(categoriesSet)
+      categories: sortedCategories
     };
   } catch (err) {
     return { success: false, message: "載入材料清單失敗: " + err.message };
@@ -786,5 +790,131 @@ function api_resetSampleERP() {
     return res;
   } catch (err) {
     return { success: false, message: "重置失敗: " + err.message };
+  }
+}
+
+/**
+ * API: 處理進貨驗收單核銷與自動對比入庫 (支援全數到貨、短交結案清零、短交保留在途、無單直接配貨)
+ * @param {Object} receiptData { receiptNo, receiptDate, vendorName, items: [ { itemCode, itemName, receivedQty, poNumber, actionType, originalPoQty, shortageQty, note } ] }
+ */
+function api_processGoodsReceipt(receiptData) {
+  try {
+    if (!receiptData || !receiptData.items || !Array.isArray(receiptData.items) || receiptData.items.length === 0) {
+      return { success: false, message: "未包含任何有效驗收品項！" };
+    }
+
+    const ss = getSpreadsheet();
+    let poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
+    if (!poSheet) {
+      poSheet = ss.insertSheet(CONFIG.SHEETS.PROCUREMENT);
+      poSheet.appendRow(["採購/請購單號", "需求日期", "預訂進貨日(補貨日)", "材料品號", "材料名稱", "採購數量", "處理狀態", "關聯單號", "備註說明"]);
+    }
+
+    const lastRow = poSheet.getLastRow();
+    const existingPoRows = (lastRow > 1) ? poSheet.getRange(2, 1, lastRow - 1, 9).getValues() : [];
+
+    const recNo = String(receiptData.receiptNo || "").trim() || "GR-" + Utilities.formatDate(new Date(), "Asia/Taipei", "yyyyMMdd-HHmm");
+    const recDate = String(receiptData.receiptDate || "").trim() || Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy/MM/dd");
+    const vendor = String(receiptData.vendorName || "").trim();
+
+    let fullCount = 0;
+    let shortCloseCount = 0;
+    let shortKeepCount = 0;
+    let directCount = 0;
+
+    const newRowsToAppend = [];
+
+    receiptData.items.forEach(item => {
+      const itemCode = String(item.itemCode || "").trim();
+      const itemName = String(item.itemName || itemCode).trim();
+      const recQty = Number(item.receivedQty) || 0;
+      const poNo = String(item.poNumber || "").trim();
+      const actionType = item.actionType || "FULL"; // FULL, SHORT_CLOSE, SHORT_KEEP, DIRECT
+      const shortageQty = Number(item.shortageQty) || 0;
+
+      if (!itemCode || recQty <= 0) return;
+
+      // 在清冊中比對未結案的採購單
+      let matchedIndex = -1;
+      if (poNo) {
+        for (let i = 0; i < existingPoRows.length; i++) {
+          const rowPo = String(existingPoRows[i][0] || "").trim();
+          const rowCode = String(existingPoRows[i][3] || "").trim();
+          const rowStatus = String(existingPoRows[i][6] || "").trim();
+
+          if ((rowPo === poNo || rowPo.includes(poNo) || poNo.includes(rowPo)) && rowCode === itemCode && !rowStatus.includes("已到貨")) {
+            matchedIndex = i;
+            break;
+          }
+        }
+      }
+
+      if (matchedIndex !== -1) {
+        const targetRow = matchedIndex + 2; // 試算表 1-based 列號
+        if (actionType === "FULL") {
+          // 全數到貨：標記為已到貨入庫
+          poSheet.getRange(targetRow, 7).setValue("已到貨入庫");
+          poSheet.getRange(targetRow, 8).setValue(recNo);
+          poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]全數驗收入庫${vendor ? '(' + vendor + ')' : ''}`);
+          fullCount++;
+        } else if (actionType === "SHORT_CLOSE") {
+          // 短交結案：實收數量入庫，在途清零
+          poSheet.getRange(targetRow, 6).setValue(recQty); // 更新為實收數，避免超額累加
+          poSheet.getRange(targetRow, 7).setValue(`已到貨 (短交結案，少${shortageQty})`);
+          poSheet.getRange(targetRow, 8).setValue(recNo);
+          poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]實收${recQty}，原請購${item.originalPoQty || (recQty + shortageQty)}，短交${shortageQty}已強制結案不再補`);
+          shortCloseCount++;
+        } else if (actionType === "SHORT_KEEP") {
+          // 短交保留在途：原本的採購單改為剩餘在途，另新增一筆已到貨入庫
+          poSheet.getRange(targetRow, 6).setValue(shortageQty); // 剩餘掛在途
+          poSheet.getRange(targetRow, 7).setValue("已請購在途 (部分到貨待補)");
+          poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]已到貨${recQty}，剩餘${shortageQty}待補`);
+
+          // 新增已到貨認列
+          newRowsToAppend.push([
+            recNo,
+            recDate,
+            recDate,
+            itemCode,
+            itemName,
+            recQty,
+            "已到貨入庫 (分批到貨)",
+            poNo,
+            `進貨單[${recNo}]分批到貨入庫${vendor ? '(' + vendor + ')' : ''}`
+          ]);
+          shortKeepCount++;
+        }
+      } else {
+        // 無前置單據或直接配貨進貨
+        newRowsToAppend.push([
+          recNo,
+          recDate,
+          recDate,
+          itemCode,
+          itemName,
+          recQty,
+          "已到貨入庫 (直接配貨)",
+          recNo,
+          `直接配貨進貨單[${recNo}]${vendor ? '(' + vendor + ')' : ''}`
+        ]);
+        directCount++;
+      }
+    });
+
+    if (newRowsToAppend.length > 0) {
+      const curLast = poSheet.getLastRow();
+      poSheet.getRange(curLast + 1, 1, newRowsToAppend.length, 9).setValues(newRowsToAppend);
+    }
+
+    // 重新滾動 45 天推移與在庫庫存
+    generate45DaysProjection();
+
+    return {
+      success: true,
+      message: `進貨驗收單 [${recNo}] 核銷入庫完成！\n• 完工全數到貨：${fullCount} 筆\n• 短交結案清零：${shortCloseCount} 筆\n• 短交保留在途：${shortKeepCount} 筆\n• 直接配貨入庫：${directCount} 筆\n物料庫存已即時累加生效！`,
+      stats: { fullCount, shortCloseCount, shortKeepCount, directCount }
+    };
+  } catch (err) {
+    return { success: false, message: "進貨驗收核銷失敗: " + err.message };
   }
 }

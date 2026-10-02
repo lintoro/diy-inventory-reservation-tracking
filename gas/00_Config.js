@@ -383,7 +383,19 @@ function getDynamicMasterMaterials() {
       }
     });
 
-    return list.length > 0 ? list : CONFIG.MASTER_MATERIALS;
+    const resultList = list.length > 0 ? list : CONFIG.MASTER_MATERIALS;
+    // 依三階層排序：#材料種類代碼 ##ERP品號 ###品名規格
+    resultList.sort((a, b) => {
+      const catCmp = String(a.category || "").localeCompare(String(b.category || ""), "zh-Hant");
+      if (catCmp !== 0) return catCmp;
+      const codeCmp = String(a.itemCode || "").localeCompare(String(b.itemCode || ""));
+      if (codeCmp !== 0) return codeCmp;
+      const nameA = `${a.itemName || ""} ${a.color || ""}`;
+      const nameB = `${b.itemName || ""} ${b.color || ""}`;
+      return nameA.localeCompare(nameB, "zh-Hant");
+    });
+
+    return resultList;
   } catch (e) {
     return CONFIG.MASTER_MATERIALS;
   }

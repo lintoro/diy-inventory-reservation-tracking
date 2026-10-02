@@ -8,9 +8,9 @@
 
 - **Web App 操作介面（工號登入 ＋ 活動抽屜 ＋ 採購核銷與單據直傳 ＋ 商品BOM維護中心 ＋ 原物料主檔管理 ＋ 三軌庫存透視 ＋ ERP 直傳）**：
   👉 [https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec](https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec)
-  - 部署版本：`@15`（Phase 12.1：預約登記管理清冊版面重構為獨立 100% 全寬卡片、解決 PC 寬螢幕擠壓與斷行痛點、新增即時搜尋過濾工具列與星期標註；Phase 12 跨日累計扣除、預約雙向維護、缺口提醒替代自動建單、進貨單+20天補貨日與到貨入庫）
+  - 部署版本：`@16`（Phase 13：進貨驗收單智慧直傳與在途勾稽自動核銷、支援完工全收/短交不足結案清零或保留/直接配貨入庫、進貨格式修正為【品號/品名】、材料主檔三階層排序、BOM選單自然名稱排序與跳號修復）
   - 預設初始最高管理者：工號 `B111014`，密碼已在系統中啟用
-  - 介面：響應式多角色視角（ADMIN 人員管理 + 業務預約端與雙向維護 + 庫存盤點與 ERP 上傳 + 採購清冊與到貨入庫 + ⚠️ 預約缺口提醒清冊 + 🎨 商品與 BOM 維護中心 + 🔩 原物料品號管理）
+  - 介面：響應式多角色視角（ADMIN 人員管理 + 業務預約端與雙向維護 + 庫存盤點與 ERP 上傳 + 採購在途清冊 + 📥 進貨驗收單直傳核銷 + ⚠️ 預約缺口提醒清冊 + 🎨 商品與 BOM 維護中心 + 🔩 原物料品號管理）
 - **Google 試算表（資料庫 SSOT）**：
   👉 [https://docs.google.com/spreadsheets/d/1D_rEF40gUEuGtNHhOpE165p5fhTmtD14vORIPZclrQc/edit](https://docs.google.com/spreadsheets/d/1D_rEF40gUEuGtNHhOpE165p5fhTmtD14vORIPZclrQc/edit)
 - **Google Apps Script 專案後端**：

@@ -660,6 +660,57 @@
     </div>
   </div>
 
+  <!-- ==================== 進貨驗收點交與在途比對確認 Modal ==================== -->
+  <div id="modal-receipt-compare" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 880px; width: 95%;">
+      <div class="card-title">
+        <div>
+          <span class="card-title-text">📥 進貨驗收點交與在途比對核銷</span>
+          <span id="gr-summary-badge" style="font-size: 12px; font-weight: 600; color: #0284c7; background: #e0f2fe; padding: 2px 8px; border-radius: 10px; margin-left: 8px;"></span>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="closeReceiptModal()">✕</button>
+      </div>
+
+      <div style="background: #f8fafc; padding: 10px 14px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px;">
+        <div><strong>進貨單號：</strong><span id="gr-modal-no" style="font-family:monospace; color:var(--primary); font-weight:700;">-</span></div>
+        <div><strong>進貨日期：</strong><span id="gr-modal-date">-</span></div>
+        <div><strong>供應廠商：</strong><span id="gr-modal-vendor">-</span></div>
+      </div>
+
+      <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">
+        系統已自動與在途採購清冊完成勾稽。若有<b>短交不足</b>之品項，請指定處置方式（預設為「結案不再補，在途數量清零」以防業務超賣）。
+      </p>
+
+      <div class="table-container" style="max-height: 320px; overflow-y: auto;">
+        <table style="font-size: 13px;">
+          <thead>
+            <tr>
+              <th style="width: 14%;">採購單號</th>
+              <th style="width: 22%;">品號 / 品名</th>
+              <th style="width: 10%; text-align: center;">原請購數</th>
+              <th style="width: 11%; text-align: center;">本次實收</th>
+              <th style="width: 18%;">比對結果</th>
+              <th style="width: 25%;">短交與在庫處置</th>
+            </tr>
+          </thead>
+          <tbody id="gr-compare-tbody"></tbody>
+        </table>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px;">
+        <span style="font-size: 12px; color: #10b981; font-weight: 600;">
+          💡 確認入庫後，實際驗收數量將即時累加至生效庫存中！
+        </span>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-outline" type="button" onclick="closeReceiptModal()">取消</button>
+          <button class="btn btn-success" type="button" onclick="confirmExecuteGoodsReceipt()">
+            ✅ 確認核銷並更新庫存 ➔
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== 預約登記修改 Modal ==================== -->
   <div id="modal-booking-editor" class="modal-overlay" style="display: none;">
     <div class="modal-card" style="max-width: 560px; width: 95%;">
@@ -1123,6 +1174,37 @@
                 <button class="btn btn-success" onclick="confirmBatchCreatePOs()">
                   🚀 確認批量登錄在途採購清冊 ➔
                 </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 📥 進貨驗收單直傳核銷面板 (對比在途 ＆ 實收直接入庫) -->
+          <div style="background: #f0fdf4; padding: 16px; border-radius: 10px; border: 1px solid #bbf7d0; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <div style="font-weight: 700; font-size: 14px; color: #15803d;">
+                📥 進貨驗收單直傳核銷 (比對在途請購 ＆ 驗收自動入庫)
+              </div>
+              <span style="font-size: 12px; color: #166534;">支援《紙膠帶進貨單.XLSX》等多工作表 ERP 報表</span>
+            </div>
+
+            <!-- 拖曳上傳與貼上區域 -->
+            <div class="grid grid-2" style="gap: 12px;">
+              <div>
+                <div id="receipt-drop-zone" class="drop-zone" style="padding: 16px; border-color: #86efac; background: #ffffff;" onclick="document.getElementById('receipt-file-input').click()">
+                  <div style="font-size: 24px;">📦</div>
+                  <div style="font-size: 13px; font-weight: 600; color: #15803d; margin-top: 4px;">點擊選擇或拖曳【進貨單】檔案</div>
+                  <div style="font-size: 11px; color: #64748b;">自動提取進貨單號、廠商與實收數量並對比在途</div>
+                  <input type="file" id="receipt-file-input" style="display: none;" accept=".xlsx, .xls, .csv" onchange="handleReceiptFileSelected(event)">
+                </div>
+              </div>
+
+              <div>
+                <textarea id="receipt-paste-text" class="form-textarea" rows="3" style="font-size: 12px;" placeholder="或複製進貨單內容貼上於此 (進貨單號、採購單號、品號、驗收數量)..."></textarea>
+                <div style="display: flex; gap: 8px; margin-top: 6px;">
+                  <button class="btn btn-success btn-sm btn-block" onclick="parsePastedReceiptText()">
+                    🔍 解析進貨單並對比在途
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1884,8 +1966,11 @@
       }
     }
 
+    let cachedPOList = [];
+
     // 渲染在途採購清單 (含多選 Checkbox 與核銷操作)
     function renderPendingPOs(list) {
+      cachedPOList = list || [];
       const tbody = document.getElementById("pending-pos-tbody");
       const selectAllChk = document.getElementById("po-select-all");
       if (selectAllChk) selectAllChk.checked = false;
@@ -1909,8 +1994,10 @@
             <td style="text-align:center;">${chkBox}</td>
             <td><strong>${p.poNumber}</strong></td>
             <td>${p.demandDate || p.orderDate || "-"}</td>
-            <td style="color:#0284c7; font-weight:600;">${p.replenishmentDate || p.deadline || "-"}</td>
-            <td><strong>${p.itemCode}</strong> <span style="font-size:12px; color:#475569;">(${p.itemName})</span></td>
+            <td>
+              <div style="font-weight:700; color:#1e293b; font-size:13px;">${p.itemCode} / ${p.itemName}</div>
+              ${p.note ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${p.note}</div>` : ''}
+            </td>
             <td style="text-align:center; color:#b91c1c; font-weight:700;">+${p.qty}</td>
             <td><span style="color:${isReceived ? '#10b981' : '#f59e0b'}; font-weight:600;">${p.status}</span></td>
             <td>${actionBtn}</td>
@@ -2120,7 +2207,7 @@
         }
       }
 
-      let reqNoCol = -1, itemCodeCol = -1, itemNameCol = -1, qtyCol = -1, reqDateCol = -1;
+      let reqNoCol = -1, itemCodeCol = -1, itemNameCol = -1, specCol = -1, qtyCol = -1, reqDateCol = -1;
 
       if (headerRowIndex !== -1) {
         const headerRow = rows[headerRowIndex];
@@ -2128,7 +2215,8 @@
           const str = String(col).trim();
           if (str.includes("請購單號") || str.includes("採購單號") || str.includes("單號")) reqNoCol = idx;
           if (str === "品號" || str.includes("材料品號") || str.includes("料號")) itemCodeCol = idx;
-          if (str === "品名" || str.includes("材料名稱") || str.includes("規格")) itemNameCol = idx;
+          if (str === "品名" || str.includes("材料名稱")) itemNameCol = idx;
+          if (str === "規格" || str.includes("規格說明")) specCol = idx;
           if (str.includes("請購數量") || str === "數量" || str.includes("採購數量")) qtyCol = idx;
           if (str.includes("需求日期") || str.includes("到貨日") || str.includes("預計到貨")) reqDateCol = idx;
         });
@@ -2145,6 +2233,7 @@
         let reqNo = defaultMasterNo || "";
         let itemCode = "";
         let itemName = "";
+        let specStr = "";
         let qty = 0;
         let reqDate = todayStr;
 
@@ -2152,6 +2241,7 @@
           if (reqNoCol !== -1 && r[reqNoCol]) reqNo = String(r[reqNoCol]).trim();
           if (itemCodeCol !== -1) itemCode = String(r[itemCodeCol]).trim();
           if (itemNameCol !== -1) itemName = String(r[itemNameCol]).trim();
+          if (specCol !== -1 && r[specCol]) specStr = String(r[specCol]).trim();
           if (qtyCol !== -1) qty = Number(r[qtyCol]) || 0;
           if (reqDateCol !== -1 && r[reqDateCol]) {
             const parsedD = parseExcelDate(r[reqDateCol]);
@@ -2179,17 +2269,22 @@
         // 比對品名
         const matched = masterList.find(m => m.itemCode === itemCode);
         if (!itemName) {
-          itemName = matched ? `${matched.itemName} (${matched.category})` : itemCode;
+          itemName = matched ? matched.itemName : itemCode;
         }
+
+        let noteStr = `需求日:${reqDate}`;
+        if (specStr) noteStr += ` | 規格:${specStr}`;
+        noteStr += ` (+20天到貨)`;
 
         parsedPOPreviewList.push({
           reqNo: reqNo,
           itemCode: itemCode,
           itemName: itemName,
+          spec: specStr,
           qty: qty,
           reqDate: reqDate,
           arrivalDate: arrivalDate, // 需求日 + 20 天
-          note: `需求日:${reqDate} (+20天到貨)`,
+          note: noteStr,
           isMatched: !!matched
         });
       });
@@ -2261,6 +2356,303 @@
           alert("進貨單匯入失敗: " + err);
         })
         .api_importProcurementPURI(parsedPOPreviewList);
+    }
+
+    // ==================== 📥 進貨驗收單解析、比對與核銷入庫 JS ====================
+    let currentReceiptCompareData = null; // 當前正在對比的進貨單資料
+
+    function handleReceiptFileSelected(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      showLoading(true, `正在以 SheetJS 智慧解析進貨單 ${file.name}...`);
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: "array" });
+          
+          let receiptNo = "";
+          let receiptDate = "";
+          let vendorName = "";
+          let targetSheetName = workbook.SheetNames[0];
+
+          // 1. 掃描各工作表，提取主單資訊 (進貨單號、進貨日期、供應廠商)
+          for (let sName of workbook.SheetNames) {
+            const tempSheet = workbook.Sheets[sName];
+            const tempRows = XLSX.utils.sheet_to_json(tempSheet, { header: 1, defval: "" });
+            if (tempRows && tempRows.length > 0) {
+              const fullStr = tempRows.map(r => r.join(" ")).join(" ");
+              // 找進貨單號與廠商
+              if (fullStr.includes("進貨單號") && !receiptNo) {
+                for (let rIdx = 0; rIdx < tempRows.length; rIdx++) {
+                  const r = tempRows[rIdx];
+                  for (let cIdx = 0; cIdx < r.length; cIdx++) {
+                    const cStr = String(r[cIdx]).trim();
+                    if (cStr === "進貨單號" && tempRows[rIdx + 1] && tempRows[rIdx + 1][cIdx]) {
+                      receiptNo = String(tempRows[rIdx + 1][cIdx]).trim();
+                    }
+                    if (cStr === "進貨日期" && tempRows[rIdx + 1] && tempRows[rIdx + 1][cIdx]) {
+                      receiptDate = parseExcelDate(tempRows[rIdx + 1][cIdx]);
+                    }
+                    if ((cStr === "供應廠商名稱" || cStr === "供應廠商") && tempRows[rIdx + 1] && tempRows[rIdx + 1][cIdx]) {
+                      vendorName = String(tempRows[rIdx + 1][cIdx]).trim();
+                    }
+                  }
+                }
+              }
+              // 判斷是否為明細表 (包含品號與 驗收數量 或 進貨數量)
+              if (fullStr.includes("品號") && (fullStr.includes("驗收數量") || fullStr.includes("進貨數量") || fullStr.includes("數量"))) {
+                targetSheetName = sName;
+              }
+            }
+          }
+
+          const activeSheet = workbook.Sheets[targetSheetName];
+          const rows = XLSX.utils.sheet_to_json(activeSheet, { header: 1, defval: "" });
+          parseRawReceiptRows(rows, { receiptNo, receiptDate, vendorName });
+        } catch (err) {
+          showLoading(false);
+          alert("進貨單檔案解析失敗: " + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      e.target.value = "";
+    }
+
+    function parsePastedReceiptText() {
+      const text = document.getElementById("receipt-paste-text").value.trim();
+      if (!text) {
+        alert("請先貼上進貨單內容！");
+        return;
+      }
+      const lines = text.split(/\r?\n/);
+      const rows = lines.map(line => line.split(line.includes("\t") ? "\t" : ","));
+      parseRawReceiptRows(rows, { receiptNo: "", receiptDate: "", vendorName: "" });
+    }
+
+    function parseRawReceiptRows(rows, headerMeta) {
+      if (!rows || rows.length === 0) {
+        showLoading(false);
+        alert("進貨單內容為空！");
+        return;
+      }
+
+      // 辨識明細表頭
+      let headerRowIndex = -1;
+      for (let i = 0; i < Math.min(rows.length, 5); i++) {
+        const rowStr = rows[i].join(" ");
+        if (rowStr.includes("品號") && (rowStr.includes("驗收數量") || rowStr.includes("進貨數量") || rowStr.includes("數量"))) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      let itemCodeCol = -1, itemNameCol = -1, specCol = -1, recQtyCol = -1, poNoCol = -1, recNoCol = -1;
+
+      if (headerRowIndex !== -1) {
+        const headerRow = rows[headerRowIndex];
+        headerRow.forEach((col, idx) => {
+          const str = String(col).trim();
+          if (str === "品號" || str.includes("材料品號") || str.includes("料號")) itemCodeCol = idx;
+          if (str === "品名" || str.includes("材料名稱")) itemNameCol = idx;
+          if (str === "規格" || str.includes("規格說明")) specCol = idx;
+          if (str === "驗收數量" || str === "進貨數量" || str.includes("實收數量")) recQtyCol = idx;
+          if (str === "採購單號" || str.includes("請購單號") || str.includes("採購單別")) {
+            if (str === "採購單號" || poNoCol === -1) poNoCol = idx;
+          }
+          if (str === "進貨單號" || str.includes("驗收單號")) recNoCol = idx;
+        });
+      }
+
+      const dataRows = (headerRowIndex !== -1) ? rows.slice(headerRowIndex + 1) : rows;
+      const parsedItems = [];
+      const masterList = (cachedDashboardData && cachedDashboardData.materials) ? cachedDashboardData.materials : [];
+
+      dataRows.forEach(r => {
+        if (!r || r.length < 2) return;
+        let itemCode = "";
+        let itemName = "";
+        let specStr = "";
+        let recQty = 0;
+        let poNo = "";
+        let rowRecNo = headerMeta.receiptNo || "";
+
+        if (headerRowIndex !== -1) {
+          if (itemCodeCol !== -1) itemCode = String(r[itemCodeCol]).trim();
+          if (itemNameCol !== -1) itemName = String(r[itemNameCol]).trim();
+          if (specCol !== -1) specStr = String(r[specCol]).trim();
+          if (recQtyCol !== -1) recQty = Number(r[recQtyCol]) || 0;
+          if (poNoCol !== -1 && r[poNoCol]) poNo = String(r[poNoCol]).trim();
+          if (recNoCol !== -1 && r[recNoCol]) rowRecNo = String(r[recNoCol]).trim();
+        } else {
+          itemCode = String(r[0] || "").trim();
+          itemName = String(r[1] || "").trim();
+          recQty = Number(r[2]) || 0;
+          poNo = String(r[3] || "").trim();
+        }
+
+        if (!itemCode || recQty <= 0) return;
+
+        // 比對品名
+        const matched = masterList.find(m => m.itemCode === itemCode);
+        if (!itemName) {
+          itemName = matched ? matched.itemName : itemCode;
+        }
+
+        parsedItems.push({
+          itemCode: itemCode,
+          itemName: itemName,
+          spec: specStr,
+          receivedQty: recQty,
+          poNumber: poNo,
+          receiptNo: rowRecNo
+        });
+      });
+
+      showLoading(false);
+      if (parsedItems.length === 0) {
+        alert("未解析出任何有效進貨明細 (需包含品號與大於 0 之驗收數量)！");
+        return;
+      }
+
+      const finalRecNo = headerMeta.receiptNo || (parsedItems[0] && parsedItems[0].receiptNo) || "GR-" + new Date().toISOString().substring(0,10).replace(/-/g,"");
+      const finalRecDate = headerMeta.receiptDate || new Date().toISOString().substring(0,10);
+      const finalVendor = headerMeta.vendorName || "合作廠商";
+
+      compareAndOpenReceiptModal({
+        receiptNo: finalRecNo,
+        receiptDate: finalRecDate,
+        vendorName: finalVendor
+      }, parsedItems);
+    }
+
+    // 比對進貨明細與在途採購清冊，並打開比對確認彈窗
+    function compareAndOpenReceiptModal(receiptMeta, items) {
+      const activePOs = (cachedPOList || []).filter(p => p.status !== "已到貨入庫" && p.status !== "已取消");
+
+      let fullCount = 0;
+      let shortCount = 0;
+      let directCount = 0;
+
+      const comparedItems = items.map(it => {
+        let matchedPO = null;
+        if (it.poNumber) {
+          matchedPO = activePOs.find(p => (p.poNumber === it.poNumber || p.poNumber.includes(it.poNumber) || it.poNumber.includes(p.poNumber)) && p.itemCode === it.itemCode);
+        }
+        // 若以單號找不到，嘗試以未結案品號兜底匹配
+        if (!matchedPO) {
+          matchedPO = activePOs.find(p => p.itemCode === it.itemCode);
+        }
+
+        let originalPoQty = matchedPO ? matchedPO.qty : 0;
+        let poNo = matchedPO ? matchedPO.poNumber : (it.poNumber || "");
+        let matchType = "DIRECT";
+        let shortageQty = 0;
+
+        if (matchedPO) {
+          if (it.receivedQty >= originalPoQty) {
+            matchType = "FULL";
+            fullCount++;
+          } else {
+            matchType = "SHORT_CLOSE"; // 短交預設結案不再補，防業務超賣
+            shortageQty = originalPoQty - it.receivedQty;
+            shortCount++;
+          }
+        } else {
+          matchType = "DIRECT";
+          directCount++;
+        }
+
+        return {
+          itemCode: it.itemCode,
+          itemName: it.itemName,
+          spec: it.spec,
+          receivedQty: it.receivedQty,
+          poNumber: poNo,
+          originalPoQty: originalPoQty,
+          matchType: matchType,
+          shortageQty: shortageQty,
+          actionType: matchType
+        };
+      });
+
+      currentReceiptCompareData = {
+        receiptNo: receiptMeta.receiptNo,
+        receiptDate: receiptMeta.receiptDate,
+        vendorName: receiptMeta.vendorName,
+        items: comparedItems
+      };
+
+      // 渲染彈窗內容
+      document.getElementById("gr-modal-no").innerText = receiptMeta.receiptNo;
+      document.getElementById("gr-modal-date").innerText = receiptMeta.receiptDate;
+      document.getElementById("gr-modal-vendor").innerText = receiptMeta.vendorName || "未指定廠商";
+      document.getElementById("gr-summary-badge").innerText = `共 ${comparedItems.length} 項 (全數到貨 ${fullCount} / 短交不足 ${shortCount} / 直接配貨 ${directCount})`;
+
+      const tbody = document.getElementById("gr-compare-tbody");
+      tbody.innerHTML = comparedItems.map((item, idx) => {
+        let statusBadge = "";
+        let actionControl = "";
+
+        if (item.matchType === "FULL") {
+          statusBadge = '<span class="status-badge GREEN">🟢 完工全數到貨</span>';
+          actionControl = '<span style="color:#10b981; font-weight:600;">採購單整筆結案 (在庫+' + item.receivedQty + ')</span>';
+        } else if (item.matchType === "SHORT_CLOSE") {
+          statusBadge = `<span class="status-badge YELLOW">🟡 短交不足 (少 ${item.shortageQty})</span>`;
+          actionControl = `
+            <select class="form-select" style="font-size:12px; padding:3px 6px;" onchange="currentReceiptCompareData.items[${idx}].actionType = this.value">
+              <option value="SHORT_CLOSE" selected>🔘 結案不再補 (剩餘在途清零)</option>
+              <option value="SHORT_KEEP">⚪ 保留在途 (等待下批補寄)</option>
+            </select>
+          `;
+        } else {
+          statusBadge = '<span class="status-badge" style="background:#8b5cf6; color:white;">🟣 直接配貨進貨</span>';
+          actionControl = '<span style="color:#8b5cf6; font-weight:600;">無採購單，實收認列入庫 (+' + item.receivedQty + ')</span>';
+        }
+
+        return `
+          <tr>
+            <td><span class="booking-code-tag">${item.poNumber || '無前置採購'}</span></td>
+            <td>
+              <div style="font-weight:700; color:#1e293b; font-size:13px;">${item.itemCode} / ${item.itemName}</div>
+              ${item.spec ? `<div style="font-size:11px; color:#64748b;">規格:${item.spec}</div>` : ''}
+            </td>
+            <td style="text-align:center; color:#64748b; font-weight:600;">${item.originalPoQty > 0 ? item.originalPoQty : '-'}</td>
+            <td style="text-align:center; font-size:15px; font-weight:800; color:#10b981;">+${item.receivedQty}</td>
+            <td>${statusBadge}</td>
+            <td>${actionControl}</td>
+          </tr>
+        `;
+      }).join("");
+
+      document.getElementById("modal-receipt-compare").style.display = "flex";
+    }
+
+    function closeReceiptModal() {
+      document.getElementById("modal-receipt-compare").style.display = "none";
+      currentReceiptCompareData = null;
+    }
+
+    // 確認執行進貨驗收單核銷入庫
+    function confirmExecuteGoodsReceipt() {
+      if (!currentReceiptCompareData || !currentReceiptCompareData.items) return;
+
+      showLoading(true, `正在執行進貨單 [${currentReceiptCompareData.receiptNo}] 核銷與庫存更新...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            closeReceiptModal();
+            loadDashboard(); // 重新整理前台組數、在途採購清冊與有效庫存
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("進貨驗收核銷失敗: " + err);
+        })
+        .api_processGoodsReceipt(currentReceiptCompareData);
     }
 
     // ==================== 📋 預約登記清冊與修改刪除管理 JS ====================
@@ -2626,25 +3018,37 @@
 
     function addBOMItemRow(selectedCategory, qty, note) {
       const tbody = document.getElementById("bom-items-tbody");
-      const cats = (cachedBOMData && cachedBOMData.availableCategories) ? cachedBOMData.availableCategories : [
+      const cats = (cachedBOMData && cachedBOMData.availableCategories) ? [...cachedBOMData.availableCategories] : [
         "手能生巧", "旁敲側擊A", "旁敲側擊B", "旁敲側擊C", "旁敲側擊D", "旁敲側擊E", "旁敲側擊F",
         "繪聲繪影A", "繪聲繪影B", "繪聲繪影C_胖胖盒", "繪聲繪影C_TB200", "繪聲繪影C_TB9", "請多紙膠A"
       ];
-      const masterMaterials = (cachedBOMData && cachedBOMData.masterMaterials) ? cachedBOMData.masterMaterials : [];
+      const masterMaterials = (cachedBOMData && cachedBOMData.masterMaterials) ? [...cachedBOMData.masterMaterials] : [];
+
+      // 依名稱排序分類群組 (問題 3)
+      cats.sort((a, b) => a.localeCompare(b, "zh-Hant"));
+
+      // 依種類代碼與品號排序具體品號 (問題 2 & 3)
+      masterMaterials.sort((a, b) => {
+        const catCmp = String(a.category || "").localeCompare(String(b.category || ""), "zh-Hant");
+        if (catCmp !== 0) return catCmp;
+        return String(a.itemCode || "").localeCompare(String(b.itemCode || ""));
+      });
 
       let optionsHtml = '<optgroup label="📦 材料種類代碼 (總量池群組)">';
       cats.forEach(c => {
-        optionsHtml += `<option value="${c}" ${c === selectedCategory ? 'selected' : ''}>${c}</option>`;
+        const isSel = (selectedCategory === c);
+        optionsHtml += `<option value="${c}" ${isSel ? 'selected' : ''}>${c}</option>`;
       });
       optionsHtml += '</optgroup>';
 
       if (masterMaterials.length > 0) {
         optionsHtml += '<optgroup label="🔩 具體材料品號 (直屬 ERP 貨號品名)">';
         masterMaterials.forEach(m => {
-          // 選取值優先保留其材料分類代碼，若無分類則以品號代替
-          const val = m.category || m.itemCode;
+          // 選取值直接以唯一 ERP 品號為值，徹底解決同分類選項 value 重複導致儲存後全部跳掉的 Bug (問題 4)
+          const val = m.itemCode;
           const label = `${m.itemCode} - ${m.itemName} (${m.category})`;
-          optionsHtml += `<option value="${val}" ${selectedCategory === val ? 'selected' : ''}>${label}</option>`;
+          const isSel = (selectedCategory === m.itemCode || selectedCategory === m.category);
+          optionsHtml += `<option value="${val}" ${isSel ? 'selected' : ''}>${label}</option>`;
         });
         optionsHtml += '</optgroup>';
       }
@@ -2769,6 +3173,17 @@
         tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:16px;">目前尚無原物料資料</td></tr>';
         return;
       }
+
+      // 依三階層排序：#材料種類代碼 ##ERP品號 ###品名規格
+      materials.sort((a, b) => {
+        const catCmp = String(a.category || "").localeCompare(String(b.category || ""), "zh-Hant");
+        if (catCmp !== 0) return catCmp;
+        const codeCmp = String(a.itemCode || "").localeCompare(String(b.itemCode || ""));
+        if (codeCmp !== 0) return codeCmp;
+        const nameA = `${a.itemName || ""} ${a.color || ""}`;
+        const nameB = `${b.itemName || ""} ${b.color || ""}`;
+        return nameA.localeCompare(nameB, "zh-Hant");
+      });
 
       tbody.innerHTML = materials.map(m => {
         const isInactive = (m.status === "停用");

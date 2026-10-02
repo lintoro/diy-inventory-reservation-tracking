@@ -193,7 +193,7 @@ function getEffectiveInventory() {
       const status = String(row[6] || "").trim();
       const note = String(row[8] || "").trim();
 
-      if (status === "已到貨入庫") {
+      if (status.includes("已到貨")) {
         arrivedQtyMap[itemCode] = (arrivedQtyMap[itemCode] || 0) + qty;
       } else if (status !== "已取消" && qty > 0) {
         if (!inTransitMap[itemCode]) inTransitMap[itemCode] = [];
