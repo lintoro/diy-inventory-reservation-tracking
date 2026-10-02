@@ -2316,6 +2316,26 @@
         .api_processGoodsReceipt(receiptPayload);
     }
 
+    // 在途採購多選勾選切換
+    function toggleSelectAllPOs(checked) {
+      document.querySelectorAll(".po-item-chk").forEach(chk => {
+        chk.checked = checked;
+      });
+      updateSelectedPOCount();
+    }
+
+    function updateSelectedPOCount() {
+      const chks = document.querySelectorAll(".po-item-chk:checked");
+      const btn = document.getElementById("btn-batch-receive");
+      const countSpan = document.getElementById("selected-po-count");
+      if (chks.length > 0) {
+        if (btn) btn.style.display = "inline-flex";
+        if (countSpan) countSpan.innerText = chks.length;
+      } else {
+        if (btn) btn.style.display = "none";
+      }
+    }
+
     // 批次標記已到貨核銷
     function batchMarkSelectedPOsReceived() {
       const chks = document.querySelectorAll(".po-item-chk:checked");

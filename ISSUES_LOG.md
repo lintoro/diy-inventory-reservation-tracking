@@ -265,3 +265,15 @@
 - **狀態**：🟢 已修復並部署至 Version @19 (2026-10-02)
 
 ---
+
+### ISSUE-022：updateSelectedPOCount 函式因代碼重構遺漏導致頁面渲染中斷白畫面
+- **問題描述**：
+  - 開啟系統頁面時畫面一片空白，DevTools Console 報錯：`Uncaught ReferenceError: updateSelectedPOCount is not defined at renderPendingPOs`。
+- **根因分析**：
+  - 在重構採購清冊雙分頁與點交彈窗時，`updateSelectedPOCount()` 與 `toggleSelectAllPOs()` 於區塊替換時被不慎截斷，導致頁面載入執行到 `renderPendingPOs` 時拋出未定義例外，中斷了後續 DOM 渲染。
+- **解決方案**：
+  - 補回 `updateSelectedPOCount()` 與 `toggleSelectAllPOs()`，並補正 `submitSingleReceipt` 結尾大括號。
+  - 使用 Node.js 執行器全面提取 `index.html` 之 `<script>` 腳本進行靜態編譯與語法驗證，確認 0 語法錯誤後部署。
+- **狀態**：🟢 已修復並部署至 Version @20 (2026-10-02)
+
+---
