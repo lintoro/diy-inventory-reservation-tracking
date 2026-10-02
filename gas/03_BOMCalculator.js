@@ -122,6 +122,29 @@ function calculateProductCapacities(inventoryList) {
 
   const results = {};
 
+  // 0. 優先載入動態商品主檔與 BOM 配方 (由 03_BOM配方設定表 驅動)
+  let allProducts = [];
+  let allRules = [];
+  const prodBomMap = {};
+  try {
+    const dynConfig = getDynamicProductsAndBOM();
+    allProducts = dynConfig.products || [];
+    allRules = dynConfig.bomRules || [];
+    allRules.forEach(r => {
+      const pid = String(r.productId);
+      if (!prodBomMap[pid]) prodBomMap[pid] = [];
+      prodBomMap[pid].push(r);
+    });
+  } catch (e) {
+    allProducts = CONFIG.PRODUCTS;
+    allRules = CONFIG.BOM_RULES;
+    allRules.forEach(r => {
+      const pid = String(r.productId);
+      if (!prodBomMap[pid]) prodBomMap[pid] = [];
+      prodBomMap[pid].push(r);
+    });
+  }
+
   // 1. 手能生巧
   const toolQty = getCategoryTotalQty("手能生巧");
   results["1"] = {
@@ -237,37 +260,94 @@ function calculateProductCapacities(inventoryList) {
     partsDetail: basketDetails
   };
 
-  // 4. 請多紙膠
-  const pandoraBoxQty = getCategoryTotalQty("請多紙膠A");
+  // 4. 請多紙膠 (CTB-3215L 潘朵拉盒 + 紙膠帶，由 03_BOM配方設定表 動態驅動)
+  let p6Rules = (prodBomMap["6"] && prodBomMap["6"].length > 0) ? [...prodBomMap["6"]] : [];
+
+  // 若 BOM 設定表尚未包含紙膠帶，但庫存中有請多紙膠B或紙膠帶品料，自動防呆補入
+  const hasTapeRule = p6Rules.some(r => r.category === "請多紙膠B" || String(r.note || "").includes("紙膠") || String(r.category || "").includes("紙膠") || String(r.category || "").startsWith("5D3"));
+  if (!hasTapeRule) {
+    const tapeStats = getCategoryStats("請多紙膠B");
+    if (tapeStats.effectiveTotal > 0 || tapeStats.erpTotal > 0 || (catMap["請多紙膠B"] && catMap["請多紙膠B"].length > 0)) {
+      p6Rules.push({
+        productId: "6",
+        productName: "請多紙膠",
+        category: "請多紙膠B",
+        qty: 1,
+        note: "DIY 紙膠帶 (共用總量)"
+      });
+    } else {
+      const tapeItem = stockList.find(s => String(s.itemName || "").includes("紙膠帶") || String(s.itemCode || "").startsWith("5D3"));
+      if (tapeItem) {
+        p6Rules.push({
+          productId: "6",
+          productName: "請多紙膠",
+          category: tapeItem.itemCode,
+          qty: 1,
+          note: tapeItem.itemName || "mt 紙膠帶"
+        });
+      }
+    }
+  }
+
+  // 若仍完全無規則，預設以請多紙膠A與請多紙膠B為基準
+  if (p6Rules.length === 0) {
+    p6Rules = [
+      { productId: "6", productName: "請多紙膠", category: "請多紙膠A", qty: 1, note: "CTB-3215L 潘朵拉盒 (黑/白2色)" },
+      { productId: "6", productName: "請多紙膠", category: "請多紙膠B", qty: 1, note: "DIY 紙膠帶 (共用總量)" }
+    ];
+  }
+
+  let p6MinUnits = Infinity;
+  let p6BtlName = "";
+  const p6RawDetails = p6Rules.map(rule => {
+    const stats = getCategoryStats(rule.category);
+    const catQty = stats.effectiveTotal;
+    const ratio = Number(rule.qty) || 1;
+    const possible = Math.floor(catQty / ratio);
+    if (possible < p6MinUnits) {
+      p6MinUnits = possible;
+      p6BtlName = `${rule.note || rule.category} (短板限制)`;
+    }
+
+    let dispName = rule.note || rule.category;
+    if (itemMap[rule.category] && itemMap[rule.category].itemName) {
+      dispName = rule.note ? `${rule.note} [${itemMap[rule.category].itemName}]` : itemMap[rule.category].itemName;
+    }
+
+    return {
+      name: dispName,
+      requiredPerUnit: ratio,
+      stats: stats,
+      poolTotal: catQty,
+      possibleUnits: possible,
+      category: rule.category
+    };
+  });
+
+  const p6SafeMin = (p6MinUnits === Infinity) ? 0 : p6MinUnits;
+  const p6Parts = p6RawDetails.map(d => {
+    const isBtl = (d.possibleUnits === p6SafeMin);
+    return buildPartInfo(d.name, d.requiredPerUnit, d.stats, d.possibleUnits, isBtl);
+  });
+
+  const p6ProdName = (allProducts.find(p => String(p.id) === "6") || {}).name || "請多紙膠";
   results["6"] = {
     productId: "6",
-    productName: "請多紙膠",
-    maxCapacity: pandoraBoxQty,
-    bottleneckCategory: "CTB-3215L 潘朵拉盒 (紙膠帶待建檔暫以盒為限)",
-    bottleneckLimit: pandoraBoxQty,
-    partsDetail: [
-      buildPartInfo("CTB-3215L 潘朵拉盒 (黑/白2色)", 1, getCategoryStats("請多紙膠A"), pandoraBoxQty, pandoraBoxQty, true)
-    ]
+    productName: p6ProdName,
+    maxCapacity: p6SafeMin,
+    bottleneckCategory: normalizeSharedPoolLabel(p6BtlName) || "材料充足",
+    bottleneckLimit: p6SafeMin,
+    partsDetail: p6Parts
   };
 
   // 5. 動態自訂商品 (由 03_BOM配方設定表 底表擴充新增之商品)
   try {
-    const dynConfig = getDynamicProductsAndBOM();
-    const allProducts = dynConfig.products || [];
-    const allRules = dynConfig.bomRules || [];
-
-    const prodBomMap = {};
-    allRules.forEach(r => {
-      if (!prodBomMap[r.productId]) prodBomMap[r.productId] = [];
-      prodBomMap[r.productId].push(r);
-    });
-
     // 動態建立內建商品 ID 集合（從 CONFIG.PRODUCTS 讀取，不寫死 ID 範圍）
     const builtinIds = new Set(CONFIG.PRODUCTS.map(p => String(p.id)));
 
     allProducts.forEach(prod => {
       const pId = String(prod.id);
-      // 若為內建商品（已在 calculateProductCapacities 上方處理），僅補充動態更名
+      // 若為內建商品（1~6 已在上方處理），僅補充動態更名
       if (builtinIds.has(pId)) {
         if (results[pId]) {
           results[pId].productName = prod.name; // 支援動態更名
