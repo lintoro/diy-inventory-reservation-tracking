@@ -734,7 +734,7 @@
           </label>
           <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
             <input type="radio" name="sr-action-type" value="SHORT_CLOSE" onchange="handleSingleReceiptTypeChange()">
-            <span>🟡 <strong>短交結案 (不會再來了)</strong> (剩餘在途清零不再補，防業務超賣)</span>
+            <span>🟡 <strong>短交 / 實收 0 結案 (不會再來了)</strong> (實收可為 0 或短少，剩餘在途清零不再補，防卡單超賣)</span>
           </label>
           <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
             <input type="radio" name="sr-action-type" value="SHORT_KEEP" onchange="handleSingleReceiptTypeChange()">
@@ -745,7 +745,7 @@
 
       <div class="form-group" id="sr-received-group" style="display:none;">
         <label class="form-label" style="font-weight:700;">本次實際到貨數量 <span style="color:red;">*</span></label>
-        <input type="number" id="sr-received-qty" class="form-input" min="1" placeholder="請輸入本次實收數量" oninput="calculateSingleReceiptShortage()">
+        <input type="number" id="sr-received-qty" class="form-input" min="0" placeholder="請輸入本次實收數量（若全數不來請填 0）" oninput="calculateSingleReceiptShortage()">
         <div id="sr-shortage-hint" style="font-size:12px; margin-top:6px; font-weight:600;"></div>
       </div>
 
@@ -2148,11 +2148,15 @@
           const displayName = (mat && mat.itemName) ? mat.itemName : (p.itemName || p.itemCode);
           let displaySpec = (mat && mat.color) ? mat.color : (p.spec || "");
 
-          const isShortClose = p.status.includes("短交");
+          const isShortClose = p.status.includes("短交") || p.status.includes("實收0") || p.status.includes("未到貨");
           const isDirect = p.status.includes("配貨");
           let statusBadgeClass = "GREEN";
           if (isShortClose) statusBadgeClass = "YELLOW";
           if (isDirect) statusBadgeClass = "BLUE";
+
+          const qtyDisplay = (Number(p.qty) === 0)
+            ? `<span style="color:#64748b; font-weight:700;">0 (未到貨)</span>`
+            : `<span style="color:#10b981; font-weight:700;">+${p.qty}</span>`;
 
           return `
             <tr style="background:#f8fafc;">
@@ -2163,7 +2167,7 @@
                 <div style="font-weight:700; color:#1e293b; font-size:13px;">${p.itemCode} / ${displayName}</div>
                 ${displaySpec ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">規格: ${displaySpec}</div>` : ''}
               </td>
-              <td style="text-align:center; color:#10b981; font-weight:700; font-size:14px;">+${p.qty}</td>
+              <td style="text-align:center; font-size:14px;">${qtyDisplay}</td>
               <td><span class="status-badge ${statusBadgeClass}" style="font-size:11px;">${p.status}</span></td>
               <td style="font-size:12px; color:#475569;">${p.note || '-'}</td>
             </tr>
@@ -2226,16 +2230,20 @@
     function calculateSingleReceiptShortage() {
       if (!currentSinglePO) return;
       const type = document.querySelector('input[name="sr-action-type"]:checked').value;
-      const recQty = Number(document.getElementById("sr-received-qty").value) || 0;
+      const rawVal = document.getElementById("sr-received-qty").value;
+      const recQty = (rawVal === "" || rawVal === null) ? null : Number(rawVal);
       const originalQty = currentSinglePO.qty;
       const hint = document.getElementById("sr-shortage-hint");
 
       if (type === "SHORT_CLOSE") {
-        if (recQty <= 0) {
-          hint.innerText = "請輸入本次大於 0 之實收到貨數量";
+        if (recQty === null || isNaN(recQty) || recQty < 0) {
+          hint.innerText = "請輸入本次實收數量（若全數不來請填 0）";
           hint.style.color = "#dc2626";
+        } else if (recQty === 0) {
+          hint.innerText = `本次實收 0 套（整筆不會來了），原請購 ${originalQty} 套將全數強制結案清零，在庫不增，在途立即移出！`;
+          hint.style.color = "#d97706";
         } else if (recQty >= originalQty) {
-          hint.innerText = `實收數量已等於或大於原請購數 (${originalQty})，建議切換為【全數到貨】`;
+          hint.innerText = `實收數量已等於或大於原請購數 (${originalQty})，建議切換為【完工全數到貨】`;
           hint.style.color = "#2563eb";
         } else {
           const shortage = originalQty - recQty;
@@ -2243,11 +2251,11 @@
           hint.style.color = "#b45309";
         }
       } else if (type === "SHORT_KEEP") {
-        if (recQty <= 0) {
-          hint.innerText = "請輸入本次大於 0 之實收到貨數量";
+        if (recQty === null || isNaN(recQty) || recQty <= 0) {
+          hint.innerText = "短交保留在途模式請輸入大於 0 之實收到貨數量（若尚未到貨請維持在途即可）";
           hint.style.color = "#dc2626";
         } else if (recQty >= originalQty) {
-          hint.innerText = `實收數量已等於或大於原請購數 (${originalQty})，建議切換為【全數到貨】`;
+          hint.innerText = `實收數量已等於或大於原請購數 (${originalQty})，建議切換為【完工全數到貨】`;
           hint.style.color = "#2563eb";
         } else {
           const shortage = originalQty - recQty;
@@ -2262,12 +2270,23 @@
     function submitSingleReceipt() {
       if (!currentSinglePO) return;
       const type = document.querySelector('input[name="sr-action-type"]:checked').value;
-      const recQty = Number(document.getElementById("sr-received-qty").value) || 0;
+      const rawVal = document.getElementById("sr-received-qty").value;
+      const recQty = (rawVal === "" || rawVal === null) ? NaN : Number(rawVal);
       const originalQty = currentSinglePO.qty;
       const userNote = document.getElementById("sr-note").value.trim();
 
-      if (recQty <= 0) {
-        alert("實收到貨數量必須大於 0！");
+      if (isNaN(recQty) || recQty < 0) {
+        alert("請輸入有效的實收數量！");
+        return;
+      }
+
+      if (type === "FULL" && recQty <= 0) {
+        alert("全數到貨之實收數量必須大於 0！");
+        return;
+      }
+
+      if (type === "SHORT_KEEP" && recQty <= 0) {
+        alert("短交保留在途模式下，本次實收數量必須大於 0！（若尚未到貨請維持在途即可，無需點交）");
         return;
       }
 
@@ -2299,8 +2318,22 @@
         }]
       };
 
-      const actionText = (type === "FULL") ? "全數到貨入庫" : (type === "SHORT_CLOSE" ? `實收 ${recQty}，短交 ${shortageQty} 結案不再補` : `實收 ${recQty}，短交 ${shortageQty} 保留在途`);
-      if (!confirm(`確定要將採購單 [${currentSinglePO.poNumber}] 執行【${actionText}】嗎？\n在庫庫存將即時增加 ${recQty}！`)) return;
+      let actionText = "";
+      if (type === "FULL") {
+        actionText = "全數到貨入庫";
+      } else if (type === "SHORT_CLOSE") {
+        actionText = (recQty === 0) 
+          ? `整筆未到貨結案 (實收 0，短少 ${shortageQty})` 
+          : `實收 ${recQty}，短交 ${shortageQty} 結案不再補`;
+      } else {
+        actionText = `實收 ${recQty}，短交 ${shortageQty} 保留在途`;
+      }
+
+      const confirmMsg = (recQty === 0)
+        ? `確定要將採購單 [${currentSinglePO.poNumber}] 執行【${actionText}】嗎？\n在途將全數清零移出，避免卡單與超賣！`
+        : `確定要將採購單 [${currentSinglePO.poNumber}] 執行【${actionText}】嗎？\n在庫庫存將即時增加 ${recQty}！`;
+
+      if (!confirm(confirmMsg)) return;
 
       showLoading(true, "正在執行點交入庫並重新試算推移...");
       google.script.run

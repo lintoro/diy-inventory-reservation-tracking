@@ -856,7 +856,9 @@ function api_processGoodsReceipt(receiptData) {
       const actionType = item.actionType || "FULL"; // FULL, SHORT_CLOSE, SHORT_KEEP, DIRECT
       const shortageQty = Number(item.shortageQty) || 0;
 
-      if (!itemCode || recQty <= 0) return;
+      if (!itemCode) return;
+      if (actionType !== "SHORT_CLOSE" && recQty <= 0) return;
+      if (actionType === "SHORT_CLOSE" && recQty < 0) return;
 
       // 在清冊中比對未結案的採購單
       let matchedIndex = -1;
@@ -894,11 +896,17 @@ function api_processGoodsReceipt(receiptData) {
           poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]全數驗收入庫${vendor ? '(' + vendor + ')' : ''}`);
           fullCount++;
         } else if (actionType === "SHORT_CLOSE") {
-          // 短交結案：實收數量入庫，在途清零
-          poSheet.getRange(targetRow, 6).setValue(recQty); // 更新為實收數，避免超額累加
-          poSheet.getRange(targetRow, 7).setValue(`已到貨 (短交結案，少${shortageQty})`);
-          poSheet.getRange(targetRow, 8).setValue(recNo);
-          poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]實收${recQty}，原請購${item.originalPoQty || (recQty + shortageQty)}，短交${shortageQty}已強制結案不再補`);
+          // 短交結案 / 實收 0 未到貨結案：實收數量入庫，在途清零
+          poSheet.getRange(targetRow, 6).setValue(recQty); // 更新為實收數（若為 0 則設為 0），避免超額累加
+          if (recQty === 0) {
+            poSheet.getRange(targetRow, 7).setValue("已到貨 (實收0，整筆未到貨結案)");
+            poSheet.getRange(targetRow, 8).setValue(recNo);
+            poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]確認全數未到貨(少${shortageQty})，已強制結案清零不再補`);
+          } else {
+            poSheet.getRange(targetRow, 7).setValue(`已到貨 (短交結案，少${shortageQty})`);
+            poSheet.getRange(targetRow, 8).setValue(recNo);
+            poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]實收${recQty}，原請購${item.originalPoQty || (recQty + shortageQty)}，短交${shortageQty}已強制結案不再補`);
+          }
           shortCloseCount++;
         } else if (actionType === "SHORT_KEEP") {
           // 短交保留在途：原本的採購單改為剩餘在途，另新增一筆已到貨入庫
