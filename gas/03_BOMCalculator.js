@@ -66,6 +66,12 @@ function calculateProductCapacities(inventoryList) {
     };
   }
 
+  // 輔助函式：將 (o色總量池)、(o款共用)、(o款共同) 等具體種類寫死的標記，統一正規化為 (共用總量)
+  function normalizeSharedPoolLabel(str) {
+    if (!str) return "";
+    return String(str).replace(/\([0-9\u4e00-\u9fa5a-zA-Z]*[色款種]?(總量池|共用|共同|共用料)\)/g, "(共用總量)");
+  }
+
   // 輔助產生下單提醒文字
   const today = new Date();
   const deadlineDate = new Date(today.getTime() + (CONFIG.LEAD_TIME_DAYS * 24 * 60 * 60 * 1000));
@@ -99,7 +105,7 @@ function calculateProductCapacities(inventoryList) {
     const incomingSupplies = (isObj && statsOrPool.incomingSupplies) ? statsOrPool.incomingSupplies : [];
 
     return {
-      name: name,
+      name: normalizeSharedPoolLabel(name),
       requiredPerUnit: req,
       poolTotal: pool,
       erpQty: erpQty,
@@ -139,18 +145,18 @@ function calculateProductCapacities(inventoryList) {
   const fatBoxMax = Math.min(fatBoxQty, sharedLimit);
   let fatBoxBottleneck = "胖胖盒專用箱";
   if (sharedLimit < fatBoxQty) {
-    fatBoxBottleneck = frameQty < paintQty ? "著色框圖A7 (共用料)" : "創意貼顏料四色 (共用料)";
+    fatBoxBottleneck = frameQty < paintQty ? "著色框圖A7 (共用總量)" : "創意貼顏料四色 (共用總量)";
   }
   results["2"] = {
     productId: "2",
     productName: "繪聲繪影 - 胖胖盒款",
     maxCapacity: fatBoxMax,
-    bottleneckCategory: fatBoxBottleneck,
+    bottleneckCategory: normalizeSharedPoolLabel(fatBoxBottleneck),
     bottleneckLimit: fatBoxMax,
     partsDetail: [
       buildPartInfo("OF-A03L 胖胖盒專用箱", 1, getCategoryStats("繪聲繪影C_胖胖盒"), fatBoxQty, fatBoxQty === fatBoxMax),
-      buildPartInfo("著色框圖A7 (三款共用)", 1, getCategoryStats("繪聲繪影A"), frameQty, frameQty === fatBoxMax),
-      buildPartInfo("創意貼顏料四色 (三款共用)", 1, getCategoryStats("繪聲繪影B"), paintQty, paintQty === fatBoxMax)
+      buildPartInfo("著色框圖A7 (共用總量)", 1, getCategoryStats("繪聲繪影A"), frameQty, frameQty === fatBoxMax),
+      buildPartInfo("創意貼顏料四色 (共用總量)", 1, getCategoryStats("繪聲繪影B"), paintQty, paintQty === fatBoxMax)
     ]
   };
 
@@ -159,18 +165,18 @@ function calculateProductCapacities(inventoryList) {
   const tb200Max = Math.min(tb200Qty, sharedLimit);
   let tb200Bottleneck = "TB-200 工具箱專用箱";
   if (sharedLimit < tb200Qty) {
-    tb200Bottleneck = frameQty < paintQty ? "著色框圖A7 (共用料)" : "創意貼顏料四色 (共用料)";
+    tb200Bottleneck = frameQty < paintQty ? "著色框圖A7 (共用總量)" : "創意貼顏料四色 (共用總量)";
   }
   results["3"] = {
     productId: "3",
     productName: "繪聲繪影 - TB-200款",
     maxCapacity: tb200Max,
-    bottleneckCategory: tb200Bottleneck,
+    bottleneckCategory: normalizeSharedPoolLabel(tb200Bottleneck),
     bottleneckLimit: tb200Max,
     partsDetail: [
       buildPartInfo("TB-200 工具箱專用箱", 1, getCategoryStats("繪聲繪影C_TB200"), tb200Qty, tb200Qty === tb200Max),
-      buildPartInfo("著色框圖A7 (三款共用)", 1, getCategoryStats("繪聲繪影A"), frameQty, frameQty === tb200Max),
-      buildPartInfo("創意貼顏料四色 (三款共用)", 1, getCategoryStats("繪聲繪影B"), paintQty, paintQty === tb200Max)
+      buildPartInfo("著色框圖A7 (共用總量)", 1, getCategoryStats("繪聲繪影A"), frameQty, frameQty === tb200Max),
+      buildPartInfo("創意貼顏料四色 (共用總量)", 1, getCategoryStats("繪聲繪影B"), paintQty, paintQty === tb200Max)
     ]
   };
 
@@ -179,27 +185,27 @@ function calculateProductCapacities(inventoryList) {
   const tb9Max = Math.min(tb9Qty, sharedLimit);
   let tb9Bottleneck = "TB-9 隨手工具箱專用箱";
   if (sharedLimit < tb9Qty) {
-    tb9Bottleneck = frameQty < paintQty ? "著色框圖A7 (共用料)" : "創意貼顏料四色 (共用料)";
+    tb9Bottleneck = frameQty < paintQty ? "著色框圖A7 (共用總量)" : "創意貼顏料四色 (共用總量)";
   }
   results["4"] = {
     productId: "4",
     productName: "繪聲繪影 - TB-9款",
     maxCapacity: tb9Max,
-    bottleneckCategory: tb9Bottleneck,
+    bottleneckCategory: normalizeSharedPoolLabel(tb9Bottleneck),
     bottleneckLimit: tb9Max,
     partsDetail: [
       buildPartInfo("TB-9 隨手工具箱專用箱", 1, getCategoryStats("繪聲繪影C_TB9"), tb9Qty, tb9Qty === tb9Max),
-      buildPartInfo("著色框圖A7 (三款共用)", 1, getCategoryStats("繪聲繪影A"), frameQty, frameQty === tb9Max),
-      buildPartInfo("創意貼顏料四色 (三款共用)", 1, getCategoryStats("繪聲繪影B"), paintQty, paintQty === tb9Max)
+      buildPartInfo("著色框圖A7 (共用總量)", 1, getCategoryStats("繪聲繪影A"), frameQty, frameQty === tb9Max),
+      buildPartInfo("創意貼顏料四色 (共用總量)", 1, getCategoryStats("繪聲繪影B"), paintQty, paintQty === tb9Max)
     ]
   };
 
   // 3. 旁敲側擊 (折疊籃)
   const basketParts = [
-    { key: "frame", name: "框 (5色總量池)", category: "旁敲側擊A", ratio: 1 },
-    { key: "bottom", name: "底 (5色總量池)", category: "旁敲側擊B", ratio: 1 },
-    { key: "longSide", name: "長側板 (5色總量池)", category: "旁敲側擊C", ratio: 4 },
-    { key: "shortSide", name: "短側板 (4色總量池)", category: "旁敲側擊D", ratio: 2 },
+    { key: "frame", name: "框 (共用總量)", category: "旁敲側擊A", ratio: 1 },
+    { key: "bottom", name: "底 (共用總量)", category: "旁敲側擊B", ratio: 1 },
+    { key: "longSide", name: "長側板 (共用總量)", category: "旁敲側擊C", ratio: 4 },
+    { key: "shortSide", name: "短側板 (共用總量)", category: "旁敲側擊D", ratio: 2 },
     { key: "shortPin", name: "短栓 (鍍五彩)", category: "旁敲側擊E", ratio: 12 },
     { key: "longPin", name: "長栓 (鍍五彩)", category: "旁敲側擊F", ratio: 4 }
   ];
@@ -310,7 +316,7 @@ function calculateProductCapacities(inventoryList) {
         productId: pId,
         productName: prod.name,
         maxCapacity: safeMin,
-        bottleneckCategory: btlName || "材料充足",
+        bottleneckCategory: normalizeSharedPoolLabel(btlName) || "材料充足",
         bottleneckLimit: safeMin,
         partsDetail: partsWithStatus
       };

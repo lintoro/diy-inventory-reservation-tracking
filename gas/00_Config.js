@@ -117,30 +117,30 @@ const CONFIG = {
     { productId: "1", productName: "手能生巧", category: "手能生巧", qty: 1, note: "經典小工具1:1" },
 
     // 繪聲繪影 - 胖胖盒款
-    { productId: "2", productName: "繪聲繪影 - 胖胖盒款", category: "繪聲繪影A", qty: 1, note: "框圖A7 (三款共用)" },
-    { productId: "2", productName: "繪聲繪影 - 胖胖盒款", category: "繪聲繪影B", qty: 1, note: "顏料四色 (三款共用)" },
+    { productId: "2", productName: "繪聲繪影 - 胖胖盒款", category: "繪聲繪影A", qty: 1, note: "框圖A7 (共用總量)" },
+    { productId: "2", productName: "繪聲繪影 - 胖胖盒款", category: "繪聲繪影B", qty: 1, note: "顏料四色 (共用總量)" },
     { productId: "2", productName: "繪聲繪影 - 胖胖盒款", category: "繪聲繪影C_胖胖盒", qty: 1, note: "胖胖盒專用箱" },
 
     // 繪聲繪影 - TB-200款
-    { productId: "3", productName: "繪聲繪影 - TB-200款", category: "繪聲繪影A", qty: 1, note: "框圖A7 (三款共用)" },
-    { productId: "3", productName: "繪聲繪影 - TB-200款", category: "繪聲繪影B", qty: 1, note: "顏料四色 (三款共用)" },
+    { productId: "3", productName: "繪聲繪影 - TB-200款", category: "繪聲繪影A", qty: 1, note: "框圖A7 (共用總量)" },
+    { productId: "3", productName: "繪聲繪影 - TB-200款", category: "繪聲繪影B", qty: 1, note: "顏料四色 (共用總量)" },
     { productId: "3", productName: "繪聲繪影 - TB-200款", category: "繪聲繪影C_TB200", qty: 1, note: "TB-200工具箱專用箱" },
 
     // 繪聲繪影 - TB-9款
-    { productId: "4", productName: "繪聲繪影 - TB-9款", category: "繪聲繪影A", qty: 1, note: "框圖A7 (三款共用)" },
-    { productId: "4", productName: "繪聲繪影 - TB-9款", category: "繪聲繪影B", qty: 1, note: "顏料四色 (三款共用)" },
+    { productId: "4", productName: "繪聲繪影 - TB-9款", category: "繪聲繪影A", qty: 1, note: "框圖A7 (共用總量)" },
+    { productId: "4", productName: "繪聲繪影 - TB-9款", category: "繪聲繪影B", qty: 1, note: "顏料四色 (共用總量)" },
     { productId: "4", productName: "繪聲繪影 - TB-9款", category: "繪聲繪影C_TB9", qty: 1, note: "TB-9工具箱專用箱" },
 
     // 旁敲側擊 (折疊籃)
-    { productId: "5", productName: "旁敲側擊 (折疊籃)", category: "旁敲側擊A", qty: 1, note: "框 (5色總量池)" },
-    { productId: "5", productName: "旁敲側擊 (折疊籃)", category: "旁敲側擊B", qty: 1, note: "底 (5色總量池)" },
-    { productId: "5", productName: "旁敲側擊 (折疊籃)", category: "旁敲側擊C", qty: 4, note: "長側板 (5色總量池)" },
-    { productId: "5", productName: "旁敲側擊 (折疊籃)", category: "旁敲側擊D", qty: 2, note: "短側板 (4色總量池)" },
+    { productId: "5", productName: "旁敲側擊 (折疊籃)", category: "旁敲側擊A", qty: 1, note: "框 (共用總量)" },
+    { productId: "5", productName: "旁敲側擊 (折疊籃)", category: "旁敲側擊B", qty: 1, note: "底 (共用總量)" },
+    { productId: "5", productName: "旁敲側擊 (折疊籃)", category: "旁敲側擊C", qty: 4, note: "長側板 (共用總量)" },
+    { productId: "5", productName: "旁敲側擊 (折疊籃)", category: "旁敲側擊D", qty: 2, note: "短側板 (共用總量)" },
     { productId: "5", productName: "旁敲側擊 (折疊籃)", category: "旁敲側擊E", qty: 12, note: "短栓 (鍍五彩)" },
     { productId: "5", productName: "旁敲側擊 (折疊籃)", category: "旁敲側擊F", qty: 4, note: "長栓 (鍍五彩)" },
 
     // 請多紙膠
-    { productId: "6", productName: "請多紙膠", category: "請多紙膠A", qty: 1, note: "潘朵拉盒 (2色總量池)" },
+    { productId: "6", productName: "請多紙膠", category: "請多紙膠A", qty: 1, note: "潘朵拉盒 (共用總量)" },
     { productId: "6", productName: "請多紙膠", category: "請多紙膠B", qty: 1, note: "紙膠帶 (待建檔)" }
   ]
 };

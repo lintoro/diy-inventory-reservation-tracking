@@ -193,7 +193,7 @@ function initDatabase() {
       m.itemName,
       m.category,
       m.color,
-      m.category.includes("旁敲側擊") ? "依BOM短板總量池" : "單份用量1",
+      m.category.includes("旁敲側擊") ? "依BOM短板共用總量" : "單份用量1",
       "啟用"
     ]);
     matSheet.getRange(2, 1, matData.length, matData[0].length).setValues(matData);
