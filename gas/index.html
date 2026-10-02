@@ -2529,6 +2529,16 @@
         return;
       }
 
+      // 智慧防呆偵測：若使用者誤將「ERP 在庫庫存表」(如 DIY全庫存.xlsx) 上傳至此處
+      for (let i = 0; i < Math.min(rows.length, 5); i++) {
+        const rowStr = (rows[i] || []).join(" ");
+        if (rowStr.includes("庫存數量") || (rowStr.includes("庫別") && rowStr.includes("品號"))) {
+          showLoading(false);
+          alert("⚠️ 系統偵測到此檔案為【ERP 在庫庫存表】(如 DIY全庫存.xlsx)！\n\n此處為【在途採購/請購單據】匯入專區（用以登記廠商未到貨之在途訂單）。\n\n若您要更新 ERP 在庫庫存底數，請切換至：\n👉【📦 庫存盤點與 ERP 帳面】➔【📥 ERP 檔案直傳與自動清洗】\n系統將自動篩選 640 倉並更新在庫帳面，避免庫存重複累加！");
+          return;
+        }
+      }
+
       // 智慧辨識表頭列
       let headerRowIndex = -1;
       for (let i = 0; i < Math.min(rows.length, 5); i++) {
@@ -4034,7 +4044,7 @@
               showLoading(false);
               alert("上傳清洗出錯: " + err);
             })
-            .api_uploadAndCleanERP(rows);
+            .api_uploadAndCleanERP(rows, file.name);
 
         } catch (err) {
           showLoading(false);

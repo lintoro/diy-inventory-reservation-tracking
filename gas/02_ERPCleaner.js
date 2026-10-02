@@ -361,7 +361,7 @@ function menu_importAndCleanERP() {
  * 5. 前端檔案上傳專用 API：接收解析後之二維資料陣列直接清洗寫入
  * @param {Array<Array>} fileRows 前端 SheetJS 解析之二維陣列
  */
-function api_uploadAndCleanERP(fileRows) {
+function api_uploadAndCleanERP(fileRows, fileName) {
   try {
     if (!fileRows || !Array.isArray(fileRows) || fileRows.length === 0) {
       return { success: false, message: "上傳的檔案無有效資料列！" };
@@ -384,11 +384,12 @@ function api_uploadAndCleanERP(fileRows) {
     // 自動連動刷新 45 天推移表
     generate45DaysProjection();
 
+    const nameStr = fileName ? ` [${fileName}] ` : " ";
     return {
       success: true,
       totalParsedRows: dataRows.length,
       validMaterialsCount: importRes.cleanResult ? importRes.cleanResult.count : 0,
-      message: `🎉 ERP 報表檔案上傳與清洗完成！\n總共解析 ${dataRows.length} 列資料，640 倉有效納入 ${importRes.cleanResult ? importRes.cleanResult.count : 0} 項物料，已自動連動刷新 45 天動態推移表！`
+      message: `🎉 ERP 報表檔案${nameStr}上傳與清洗完成！\n總共解析 ${dataRows.length} 列資料，640 倉有效納入 ${importRes.cleanResult ? importRes.cleanResult.count : 0} 項物料，在庫庫存與 45 天動態推移已即時更新生效！`
     };
   } catch (err) {
     return { success: false, message: "檔案清洗寫入失敗: " + err.message };
