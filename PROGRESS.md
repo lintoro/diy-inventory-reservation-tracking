@@ -57,7 +57,9 @@
     - 新增單筆「📦 到貨點交」Modal 彈窗：支援全數到貨、短交結案 (不會再來了 / 剩餘在途清零防超賣)、短交保留。
   - **白畫面 ReferenceError 修復 (ISSUE-022)**：
     - 補回重構時遺漏的 `updateSelectedPOCount` 與 `toggleSelectAllPOs` 函式，恢復頁面正常渲染。
-  - **正式部署**：Web App 更新部署至 Version **`@20`**。
+  - **HTML 標籤閉合與主畫面顯示修復 (ISSUE-023)**：
+    - 補正 `modal-receipt-compare` 遺漏的閉合 `</div>`，全局開閉標籤完美平衡（229/229），主系統畫面恢復正常可見。
+  - **正式部署**：Web App 更新部署至 Version **`@21`**。
 
 ### 2026-09-28
 - [x] 完成 Phase 12：
