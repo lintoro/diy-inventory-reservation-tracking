@@ -829,6 +829,9 @@
       <button id="tab-btn-admin" class="tab-btn" onclick="switchTab('tab-admin')" style="display: none;">
         👑 人員帳號管理
       </button>
+      <button id="tab-btn-audit" class="tab-btn" onclick="switchTab('tab-audit')" style="display: none;">
+        🛡️ 系統修改日誌 (LOG)
+      </button>
       <button id="tab-btn-booking" class="tab-btn" onclick="switchTab('tab-booking')" style="display: none;">
         📝 業務接單速查與預約
       </button>
@@ -844,6 +847,12 @@
 
       <!-- ================= TAB 1: ADMIN 人員帳號管理 ================= -->
       <div id="tab-admin" class="tab-pane">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <div style="font-size: 16px; font-weight: 700; color: #1e293b;">👑 系統人員帳號與權限審核</div>
+          <button class="btn btn-outline btn-sm" onclick="switchTab('tab-audit')">
+            🛡️ 前往系統操作日誌 (LOG) 稽核 ➔
+          </button>
+        </div>
         <div class="grid grid-admin-stat" style="margin-bottom: 20px;">
           <div class="card" style="border-left: 4px solid var(--purple);">
             <div style="font-size: 13px; color: var(--text-muted);">總註冊人數</div>
@@ -939,9 +948,12 @@
             </table>
           </div>
         </div>
+      </div>
 
+      <!-- ================= TAB 5: ADMIN 系統操作與修改日誌 (Audit Log) ================= -->
+      <div id="tab-audit" class="tab-pane">
         <!-- 系統操作日誌 (Audit Log) 查詢與審核 -->
-        <div class="card" style="margin-top: 20px;">
+        <div class="card">
           <div class="card-title">
             <span class="card-title-text">🛡️ 系統操作日誌 (Audit Log) 稽核與查詢</span>
             <div style="display: flex; gap: 8px;">
@@ -1796,12 +1808,14 @@
       }
 
       const btnAdmin = document.getElementById("tab-btn-admin");
+      const btnAudit = document.getElementById("tab-btn-audit");
       const btnBooking = document.getElementById("tab-btn-booking");
       const btnManager = document.getElementById("tab-btn-manager");
       const btnBom = document.getElementById("tab-btn-bom");
 
       if (currentUser.role === "ADMIN") {
         btnAdmin.style.display = "inline-block";
+        if (btnAudit) btnAudit.style.display = "inline-block";
         btnBooking.style.display = "inline-block";
         btnManager.style.display = "inline-block";
         if (btnBom) btnBom.style.display = "inline-block";
@@ -1809,12 +1823,14 @@
         loadUsersList();
       } else if (currentUser.role === "SALES") {
         btnAdmin.style.display = "none";
+        if (btnAudit) btnAudit.style.display = "none";
         btnBooking.style.display = "inline-block";
         btnManager.style.display = "none";
         if (btnBom) btnBom.style.display = "none";
         switchTab("tab-booking");
       } else if (currentUser.role === "INVENTORY") {
         btnAdmin.style.display = "none";
+        if (btnAudit) btnAudit.style.display = "none";
         btnBooking.style.display = "none";
         btnManager.style.display = "inline-block";
         if (btnBom) btnBom.style.display = "inline-block";
@@ -1898,6 +1914,10 @@
       if (tabId === "tab-admin") {
         document.getElementById("tab-btn-admin").classList.add("active");
         loadUsersList();
+      }
+      if (tabId === "tab-audit") {
+        const b = document.getElementById("tab-btn-audit");
+        if (b) b.classList.add("active");
         loadAuditLogs(1);
       }
       if (tabId === "tab-booking") document.getElementById("tab-btn-booking").classList.add("active");
