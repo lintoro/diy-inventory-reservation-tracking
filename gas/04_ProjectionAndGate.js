@@ -366,6 +366,20 @@ function getAllBookingRecords() {
         bkSheet.getRange(u.row, 8).setValue(u.light);
         bkSheet.getRange(u.row, 9).setValue(u.status);
       });
+
+      if (typeof writeAuditLog === "function") {
+        writeAuditLog({
+          operatorEmpNo: "SYSTEM",
+          operatorName: "庫存核銷引擎",
+          operatorRole: "SYSTEM",
+          module: "SYSTEM",
+          action: "AUTO_SYNC",
+          target: "06_預約登記明細",
+          summary: `系統動態試算：自動同步更新 ${statusUpdates.length} 筆預約之最新燈號與缺口提醒`,
+          status: "成功",
+          source: "SYSTEM_AUTO"
+        });
+      }
     }
   } catch (syncErr) {
     // 容錯機制：若動態計算有微小偏差，不影響清單回傳
@@ -541,6 +555,20 @@ function generate45DaysProjection() {
     projSheet.getRange(2, 1, daysList.length, daysList[0].length).setValues(daysList);
   }
   projSheet.autoResizeColumns(1, totalCols);
+
+  if (typeof writeAuditLog === "function") {
+    writeAuditLog({
+      operatorEmpNo: "SYSTEM",
+      operatorName: "推移預測引擎",
+      operatorRole: "SYSTEM",
+      module: "SYSTEM",
+      action: "AUTO_SYNC",
+      target: "07_45天動態推移底表",
+      summary: `重算未來 ${CONFIG.PROJECTION_DAYS} 天庫存可用推移底表（共 ${daysList.length} 天，${productIds.length} 個方案）`,
+      status: "成功",
+      source: "SYSTEM_AUTO"
+    });
+  }
 
   return {
     success: true,

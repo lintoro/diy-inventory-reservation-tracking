@@ -360,8 +360,10 @@ function menu_importAndCleanERP() {
 /**
  * 5. 前端檔案上傳專用 API：接收解析後之二維資料陣列直接清洗寫入
  * @param {Array<Array>} fileRows 前端 SheetJS 解析之二維陣列
+ * @param {string} fileName 檔案名稱
+ * @param {Object} operator 操作人員資訊 { empNo, name, role }
  */
-function api_uploadAndCleanERP(fileRows, fileName) {
+function api_uploadAndCleanERP(fileRows, fileName, operator) {
   try {
     if (!fileRows || !Array.isArray(fileRows) || fileRows.length === 0) {
       return { success: false, message: "上傳的檔案無有效資料列！" };
@@ -385,11 +387,27 @@ function api_uploadAndCleanERP(fileRows, fileName) {
     generate45DaysProjection();
 
     const nameStr = fileName ? ` [${fileName}] ` : " ";
+    const validCount = importRes.cleanResult ? importRes.cleanResult.count : 0;
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "",
+        module: "ERP",
+        action: "IMPORT",
+        target: fileName || "ERP匯入檔案",
+        summary: `上傳 ERP 報表檔案${nameStr}，解析 ${dataRows.length} 列，640 倉納入 ${validCount} 項物料`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
     return {
       success: true,
       totalParsedRows: dataRows.length,
-      validMaterialsCount: importRes.cleanResult ? importRes.cleanResult.count : 0,
-      message: `🎉 ERP 報表檔案${nameStr}上傳與清洗完成！\n總共解析 ${dataRows.length} 列資料，640 倉有效納入 ${importRes.cleanResult ? importRes.cleanResult.count : 0} 項物料，在庫庫存與 45 天動態推移已即時更新生效！`
+      validMaterialsCount: validCount,
+      message: `🎉 ERP 報表檔案${nameStr}上傳與清洗完成！\n總共解析 ${dataRows.length} 列資料，640 倉有效納入 ${validCount} 項物料，在庫庫存與 45 天動態推移已即時更新生效！`
     };
   } catch (err) {
     return { success: false, message: "檔案清洗寫入失敗: " + err.message };

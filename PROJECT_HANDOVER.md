@@ -8,9 +8,9 @@
 
 - **Web App 操作介面（工號登入 ＋ 活動抽屜 ＋ 採購核銷與單據直傳 ＋ 商品BOM維護中心 ＋ 原物料主檔管理 ＋ 三軌庫存透視 ＋ ERP 直傳）**：
   👉 [https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec](https://script.google.com/macros/s/AKfycby7P0D0_j15Zc7h1BkM1Q5FXLzk1umFPicaqA4WoUOk8qg5Op-r050rUdTKiViAh7QL0g/exec)
-  - 部署版本：`@29`（Phase 22：請多紙膠 BOM 全面動態化、潘朵拉盒與新補紙膠帶完整納入抽屜與短板；Phase 21：預約清冊日期升冪排序/較前排最上、活動已過期不顯示、連續建單單號重複防呆、精準列操作修復；Phase 20：系統全靜態硬編碼全面動態化；Phase 16-19：實收0整筆未到貨結案、花色與多款共用統一標記(共用總量)、ERP直傳智慧防呆辨識、預約缺口即時動態核銷）
+  - 部署版本：`@30`（Phase 23：新增系統操作日誌 (Audit Log) 全方位記錄、底表結構、查詢介面、8 大維度篩選器、系統自動標記隔離與逾期封存機制；Phase 22：請多紙膠 BOM 全面動態化；Phase 21：預約清冊日期升冪排序/較前排最上、活動已過期不顯示、單號重複防呆、精準列操作；Phase 20：系統全靜態硬編碼全面動態化）
   - 預設初始最高管理者：工號 `B111014`，密碼已在系統中啟用
-  - 介面：響應式多角色視角（ADMIN 人員管理 + 業務預約端與雙向維護 + 庫存盤點與 ERP 上傳 + 採購在途清冊 + 📥 進貨驗收單直傳核銷 + ⚠️ 預約缺口提醒清冊 + 🎨 商品與 BOM 維護中心 + 🔩 原物料品號管理）
+  - 介面：響應式多角色視角（ADMIN 人員管理 + 🛡️ 系統操作日誌稽核與查詢 + 業務預約端與雙向維護 + 庫存盤點與 ERP 上傳 + 採購在途清冊 + 📥 進貨驗收單直傳核銷 + ⚠️ 預約缺口提醒清冊 + 🎨 商品與 BOM 維護中心 + 🔩 原物料品號管理）
 - **Google 試算表（資料庫 SSOT）**：
   👉 [https://docs.google.com/spreadsheets/d/1D_rEF40gUEuGtNHhOpE165p5fhTmtD14vORIPZclrQc/edit](https://docs.google.com/spreadsheets/d/1D_rEF40gUEuGtNHhOpE165p5fhTmtD14vORIPZclrQc/edit)
 - **Google Apps Script 專案後端**：
@@ -56,7 +56,7 @@ npx clasp login
 
 ---
 
-## 三、 核心資料庫 8 大底表結構
+## 三、 核心資料庫 9 大底表結構
 
 | 工作表名稱 | 用途與運作機制 | 關鍵欄位 |
 | :--- | :--- | :--- |
@@ -68,42 +68,43 @@ npx clasp login
 | **05_在途採購清冊** | 黃燈超額接單時自動產生缺料採購單，標註最晚叫貨日 | 採購單號、叫貨日、最晚下單日、品號、缺額、狀態 |
 | **06_預約登記明細** | 業務窗口送單登記明細，防呆阻擋紅燈單入庫 | 預約單號、活動日、商品、套數、團體、燈號、叫貨狀態 |
 | **07_45天動態推移底表** | 滾動推移未來 45 天每日扣除平日(10)/假日(35)散客保底之淨可用量 | 日期、星期、型態、各商品淨可用量、試算時間 |
+| **10_系統操作日誌** | 全方位記錄同仁與系統操作流水帳，支援多維度篩選與自動封存 | 紀錄ID、操作時間、工號、姓名、角色、功能模組、動作類型、目標物件、操作摘要、結果、錯誤訊息、來源 |
 
 ---
 
 ## 四、 核心後端模組清單 (GAS Codebase)
 
-1. `gas/00_Config.js`：系統全域常數、8 大底表定義、29 項材料主檔、6 大商品 BOM 規則、初始管理者設定 `B111014`。
+1. `gas/00_Config.js`：系統全域常數、9 大底表定義、29 項材料主檔、6 大商品 BOM 規則、初始管理者設定 `B111014`、日誌保留天數與分頁設定。
 2. `gas/00_SampleERP.js`：門市 175 筆真實 ERP 原始匯出範例資料集。
-3. `gas/01_InitDB.js`：試算表 8 大底表樣式排版、主檔與初始管理者自動匯入、自訂管理選單。
+3. `gas/01_InitDB.js`：試算表 9 大底表樣式排版、主檔與初始管理者自動匯入、自訂管理選單。
 4. `gas/02_ERPCleaner.js`：ERP 原始資料清洗過濾、檔案二維陣列直傳自動清洗 (`api_uploadAndCleanERP`)、現場抽盤登記與雙軌庫存融合模組。
-5. `gas/03_BOMCalculator.js`：折疊籃 6 部件款式花色總量池木桶短板運算、繪聲繪影共用料連動扣抵。
-6. `gas/04_ProjectionAndGate.js`：45 天動態推移、15 天交期時間閘門防呆、最晚下單日倒推與採購單生成。
-7. `gas/05_API.js`：Web App 前端唯一 `doGet(e)` 與遠端 API 控制器。
+5. `gas/03_BOMCalculator.js`：折疊籃 6 部件款式花色總量池木桶短板運算、繪聲繪影共用料連動扣抵、商品 6 請多紙膠完整動態 BOM。
+6. `gas/04_ProjectionAndGate.js`：45 天動態推移、15 天交期時間閘門防呆、最晚下單日倒推與預約單動態核銷試算。
+7. `gas/05_API.js`：Web App 前端唯一 `doGet(e)` 與遠端 API 控制器（支援操作者身分傳遞與稽核記錄）。
 8. `gas/06_AuthManager.js`：工號認證、SHA-256 密碼雜湊、線上申請、ADMIN 審核、停用/啟用、重設密碼與首次強制修改密碼 API。
-9. `gas/99_Tests.js`：各階段自動化單元測試套件（含 Phase 6 帳號與上傳自動化驗證函式）。
-10. `gas/index.html`：整合 SheetJS 引擎之多角色響應式現代化前端介面。
+9. `gas/07_AuditLogger.js`：安全寫入日誌 (`writeAuditLog`)、ADMIN 專屬日誌查詢 (`api_getAuditLogs`)、試算表手動編輯監聽器 (`onEditAuditTrigger`) 與 180 天逾期自動封存引擎 (`archiveOldAuditLogs`)。
+10. `gas/99_Tests.js`：各階段自動化單元測試套件（含 Phase 6 帳號與上傳自動化驗證函式）。
+11. `gas/index.html`：整合 SheetJS 引擎之多角色響應式現代化前端介面（含 ADMIN 日誌查詢卡片、統計條、篩選器與 CSV 匯出）。
 
 ---
 
 ## 五、 踩坑防護與關鍵注意事項 (Critical Gotchas)
 
 1. **唯一 `doGet` 原則**：
-   - GAS 整個專案中**絕不可在多個 `.js` 檔案重複宣告 `doGet(e)`**，否則字母排序在後的檔案會無情覆蓋前者的 HTML 渲染（如先前 `99_Tests.js` 覆蓋 `05_API.js`）。
+   - GAS 整個專案中**絕不可在多個 `.js` 檔案重複宣告 `doGet(e)`**，否則字母排序在後的檔案會無情覆蓋前者的 HTML 渲染。
 2. **Web App 存取試算表不可單靠 `getActiveSpreadsheet()`**：
    - 透過獨立網址存取 Web App 時，沒有「當前作用中試算表」，`getActiveSpreadsheet()` 會回傳 null；必須保留 `SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID)` 兜底。
 3. **Google Sheets Date 物件格式化**：
    - 讀取試算表日期時，儲存格常為 JavaScript `Date` 物件，轉字串必須統一使用 `Utilities.formatDate(val, "Asia/Taipei", "yyyy/MM/dd")`，嚴禁使用 `String(val)` 以免產生 GMT 字串引發格式解析錯誤。
 4. **機密資料隔離鐵律**：
    - `/參考資料不要上推/`（含定價、企劃書與全庫存 Excel）已被 `.gitignore` 嚴格阻絕，異地作業時亦切勿手動上推。
+5. **日誌與主業務容錯隔離**：
+   - `writeAuditLog` 必須維持 `try-catch` 內部安全封閉，日誌異常絕對不得阻斷預約、採購或庫存操作。
 
 ---
 
 ## 六、 下次開發待辦清單 (Next Action Items)
 
-- [x] **Phase 16-19 核心業務規則閉環**：實收0整筆未到貨結案防卡單、花色共用標記統一為(共用總量)、ERP直傳辨識引導、新庫存即時動態核銷。
-- [x] **Phase 20 全面動態化**：移除接單表單靜態選項、動態標記 isBuiltin、45天推移支援自訂商品動態迭代、常數化配置集中管理。
-- [x] **Phase 21 預約清冊體驗精緻化**：活動日期較前排在最上方（升冪排列）、預約日期已過自動排除不顯示在欄位、連續建單單號強制重置防重複、rowIndex 精準列操作。
-- [x] **Phase 22 請多紙膠 BOM 動態化**：重構 BOMCalculator，潘朵拉盒與新補紙膠帶完整納入抽屜與短板試算。
+- [x] **Phase 23 系統操作日誌 (Audit Log)**：完成記錄、底表結構、查詢介面與逾期封存機制。
 - [ ] **推移表自動排程觸發器 (Time-driven Trigger)**：評估是否設定每日凌晨自動執行一次 `generate45DaysProjection()` 滾動推移最新 45 天資料。
 - [ ] **多語系/文案與欄位校對**：確認預約登記欄位（聯絡人、備註、時段等）是否貼合門市現場慣用語。

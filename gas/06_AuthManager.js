@@ -94,6 +94,20 @@ function api_login(empNo, password) {
         const nowStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
         sheet.getRange(i + 2, 8).setValue(nowStr);
 
+        if (typeof writeAuditLog === "function") {
+          writeAuditLog({
+            operatorEmpNo: rowEmpNo,
+            operatorName: name,
+            operatorRole: role,
+            module: "AUTH",
+            action: "LOGIN",
+            target: rowEmpNo,
+            summary: `同仁 [${name}(${rowEmpNo})] 成功登入系統，角色: ${role}`,
+            status: "成功",
+            source: "WEB_APP"
+          });
+        }
+
         return {
           success: true,
           message: "登入成功！",
@@ -154,6 +168,20 @@ function api_changePassword(empNo, oldPassword, newPassword) {
         sheet.getRange(rowIndex, 3).setValue(newHash);
         sheet.getRange(rowIndex, 6).setValue(false);
 
+        if (typeof writeAuditLog === "function") {
+          writeAuditLog({
+            operatorEmpNo: rowEmpNo,
+            operatorName: String(row[1] || ""),
+            operatorRole: String(row[3] || ""),
+            module: "AUTH",
+            action: "UPDATE",
+            target: rowEmpNo,
+            summary: `同仁 [${row[1]}(${rowEmpNo})] 修改登入密碼成功`,
+            status: "成功",
+            source: "WEB_APP"
+          });
+        }
+
         return {
           success: true,
           message: "密碼修改成功！已解除首次修改限制，歡迎使用系統。"
@@ -204,6 +232,20 @@ function api_registerUser(empNo, name, department) {
       nowStr,
       "" // 最後登入
     ]);
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: cleanEmpNo,
+        operatorName: cleanName,
+        operatorRole: "GUEST",
+        module: "AUTH",
+        action: "CREATE",
+        target: cleanEmpNo,
+        summary: `新同仁 [${cleanName}(${cleanEmpNo})] 線上註冊帳號 (待審核)，單位/備註: ${department || "無"}`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
 
     return {
       success: true,
@@ -300,6 +342,20 @@ function api_approveUser(adminEmpNo, targetEmpNo, role) {
         sheet.getRange(rowIndex, 5).setValue(CONFIG.USER_STATUS.ACTIVE);   // 狀態開通
         sheet.getRange(rowIndex, 6).setValue(true);                        // 首次登入必改密碼
 
+        if (typeof writeAuditLog === "function") {
+          writeAuditLog({
+            operatorEmpNo: adminEmpNo,
+            operatorName: "ADMIN",
+            operatorRole: "ADMIN",
+            module: "AUTH",
+            action: "APPROVE",
+            target: cleanTarget,
+            summary: `管理者審核開通同仁 [${cleanTarget}]，角色: ${targetRole}`,
+            status: "成功",
+            source: "WEB_APP"
+          });
+        }
+
         return {
           success: true,
           message: `已成功核准工號 [${cleanTarget}]，指派角色為 [${targetRole}]！預設密碼為 000000（首次登入將強制修改）。`
@@ -335,6 +391,21 @@ function api_toggleUserStatus(adminEmpNo, targetEmpNo, targetStatus) {
       if (String(data[i][0]).trim().toUpperCase() === cleanTarget) {
         const rowIndex = i + 2;
         sheet.getRange(rowIndex, 5).setValue(targetStatus);
+
+        if (typeof writeAuditLog === "function") {
+          writeAuditLog({
+            operatorEmpNo: adminEmpNo,
+            operatorName: "ADMIN",
+            operatorRole: "ADMIN",
+            module: "AUTH",
+            action: "UPDATE",
+            target: cleanTarget,
+            summary: `管理者切換同仁 [${cleanTarget}] 狀態為: ${targetStatus}`,
+            status: "成功",
+            source: "WEB_APP"
+          });
+        }
+
         return {
           success: true,
           message: `工號 [${cleanTarget}] 狀態已更新為 [${targetStatus}]！`
@@ -369,6 +440,20 @@ function api_resetUserPassword(adminEmpNo, targetEmpNo) {
         const rowIndex = i + 2;
         sheet.getRange(rowIndex, 3).setValue(defaultHash); // 重設密碼 Hash
         sheet.getRange(rowIndex, 6).setValue(true);        // 需強制改密碼
+
+        if (typeof writeAuditLog === "function") {
+          writeAuditLog({
+            operatorEmpNo: adminEmpNo,
+            operatorName: "ADMIN",
+            operatorRole: "ADMIN",
+            module: "AUTH",
+            action: "UPDATE",
+            target: cleanTarget,
+            summary: `管理者重設同仁 [${cleanTarget}] 密碼為預設 000000`,
+            status: "成功",
+            source: "WEB_APP"
+          });
+        }
 
         return {
           success: true,
@@ -420,6 +505,20 @@ function api_createUserByAdmin(adminEmpNo, empNo, name, role) {
       nowStr,
       ""
     ]);
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: adminEmpNo,
+        operatorName: "ADMIN",
+        operatorRole: "ADMIN",
+        module: "AUTH",
+        action: "CREATE",
+        target: cleanEmpNo,
+        summary: `管理者直接新增同仁帳號 [${cleanName}(${cleanEmpNo})]，角色: ${role || CONFIG.ROLES.SALES}`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
 
     return {
       success: true,

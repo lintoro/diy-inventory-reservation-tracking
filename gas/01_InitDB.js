@@ -136,10 +136,17 @@ function initDatabase() {
         "推移日期", "星期", "日期型態", "手能生巧_可用", "胖胖盒_可用", "TB200_可用", "TB9_可用", "折疊籃_可用", "請多紙膠_可用", "最後試算時間"
       ],
       headerColor: "#1F618D" // 海藍
+    },
+    {
+      name: CONFIG.SHEETS.AUDIT_LOG,
+      headers: [
+        "紀錄ID", "操作時間", "工號", "姓名", "角色", "功能模組", "動作類型", "目標物件", "操作摘要", "結果", "錯誤訊息", "來源"
+      ],
+      headerColor: "#334155" // 板岩灰
     }
   ];
 
-  // 1. 確保 8 張底表存在並設定表頭
+  // 1. 確保 9 張底表存在並設定表頭
   sheetsConfig.forEach(cfg => {
     let sheet = ss.getSheetByName(cfg.name);
     if (!sheet) {

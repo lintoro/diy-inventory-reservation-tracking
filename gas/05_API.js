@@ -176,6 +176,20 @@ function api_updateSafetyFloor(userEmpNo, weekday, weekend, specialDates) {
     // 自動重新計算 45 天推移表
     generate45DaysProjection();
 
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: cleanEmpNo,
+        operatorName: "",
+        operatorRole: "INVENTORY",
+        module: "CAPACITY",
+        action: "UPDATE",
+        target: "散客保底配置",
+        summary: `更新現場散客保底底線 (平日: ${updatedCfg.weekday} 份, 假日: ${updatedCfg.weekend} 份)`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
     return {
       success: true,
       message: `散客保底設定已儲存 (平日: ${updatedCfg.weekday} 份 / 假日: ${updatedCfg.weekend} 份)，並已自動重新完成 45 天推移計算！`,
@@ -292,9 +306,9 @@ function api_checkEligibility(eventDateStr, productId, qty) {
 /**
  * API: 業務端送出預約登記 (支援自訂預約單號)
  */
-function api_submitBooking(data) {
+function api_submitBooking(data, operator) {
   try {
-    return submitBookingRecord(
+    const res = submitBookingRecord(
       data.eventDate,
       data.productId,
       data.qty,
@@ -303,6 +317,22 @@ function api_submitBooking(data) {
       data.note,
       data.bookingNo
     );
+
+    if (res && res.success && typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : (data.groupName || ""),
+        operatorRole: operator ? operator.role : "SALES",
+        module: "BOOKING",
+        action: "CREATE",
+        target: res.bookingNo || data.bookingNo,
+        summary: `建立預約單 [${res.bookingNo}]，活動日: ${data.eventDate}，商品: ${res.checkResult ? res.checkResult.productName : data.productId}，數量: ${data.qty} 套，燈號: ${res.light}`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
+    return res;
   } catch (err) {
     return { success: false, message: "送出預約失敗: " + err.message };
   }
@@ -311,8 +341,9 @@ function api_submitBooking(data) {
 /**
  * API: 庫管人員手動登錄在途採購單 (INPUT 表單)
  * @param {Object} data { itemCode, qty, arrivalDate, poNumber, note }
+ * @param {Object} operator 操作人員資訊
  */
-function api_createProcurementOrder(data) {
+function api_createProcurementOrder(data, operator) {
   try {
     const itemCode = String(data.itemCode || "").trim();
     const qty = Number(data.qty) || 0;
@@ -360,6 +391,20 @@ function api_createProcurementOrder(data) {
       data.note || ""
     ]);
 
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "INVENTORY",
+        module: "PROCUREMENT",
+        action: "CREATE",
+        target: poNo,
+        summary: `手動新增採購單 [${poNo}]，品項: ${itemName}，數量: ${qty}，預計到貨日: ${arrivalDateStr || "未定"}`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
     return {
       success: true,
       message: `採購單 [${poNo}] 已成功建立並排入在途清冊！`,
@@ -373,8 +418,9 @@ function api_createProcurementOrder(data) {
 /**
  * API: 庫管人員將在途採購單標記為「已到貨入庫」
  * @param {string} poNumber 採購單號
+ * @param {Object} operator 操作人員資訊
  */
-function api_markProcurementReceived(poNumber) {
+function api_markProcurementReceived(poNumber, operator) {
   try {
     const cleanPo = String(poNumber || "").trim();
     if (!cleanPo) return { success: false, message: "採購單號不得為空" };
@@ -393,6 +439,20 @@ function api_markProcurementReceived(poNumber) {
         // 到貨後立即動態重新整理 45 天推移表 (物料庫存自動累加生效)
         generate45DaysProjection();
 
+        if (typeof writeAuditLog === "function") {
+          writeAuditLog({
+            operatorEmpNo: operator ? operator.empNo : "",
+            operatorName: operator ? operator.name : "",
+            operatorRole: operator ? operator.role : "INVENTORY",
+            module: "PROCUREMENT",
+            action: "UPDATE",
+            target: cleanPo,
+            summary: `單筆採購單 [${cleanPo}] 標記為【已到貨入庫】並核銷生效`,
+            status: "成功",
+            source: "WEB_APP"
+          });
+        }
+
         return {
           success: true,
           message: `採購/請購單 [${cleanPo}] 已成功核銷為【已到貨入庫】，採購數量已即時併入有效庫存！`
@@ -409,8 +469,9 @@ function api_markProcurementReceived(poNumber) {
 /**
  * API: 批次勾選將多筆在途採購單標記為「已到貨入庫」
  * @param {Array<string>} poNumberList 採購單號清單
+ * @param {Object} operator 操作人員資訊
  */
-function api_batchMarkProcurementReceived(poNumberList) {
+function api_batchMarkProcurementReceived(poNumberList, operator) {
   try {
     if (!poNumberList || !Array.isArray(poNumberList) || poNumberList.length === 0) {
       return { success: false, message: "未選取任何採購單" };
@@ -435,6 +496,20 @@ function api_batchMarkProcurementReceived(poNumberList) {
 
     // 重新計算推移與庫存融合
     generate45DaysProjection();
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "INVENTORY",
+        module: "PROCUREMENT",
+        action: "UPDATE",
+        target: `批次${updatedCount}筆`,
+        summary: `批次勾選標記 ${updatedCount} 筆採購單為【已到貨入庫】`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
 
     return {
       success: true,
@@ -520,6 +595,20 @@ function api_importProcurementPURI(ordersList) {
 
     // 重新運算推移
     generate45DaysProjection();
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "INVENTORY",
+        module: "PROCUREMENT",
+        action: "IMPORT",
+        target: `PURI進貨單${validRows.length}筆`,
+        summary: `匯入 PURI 進貨單共 ${validRows.length} 筆，已自動設定補貨日 (+20天)`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
 
     return {
       success: true,
@@ -630,10 +719,25 @@ function api_getBookingList(includePast) {
 /**
  * API: 修改既有預約單
  * @param {Object} data { bookingNo, rowIndex, eventDate, productName, qty, groupName, phone, note }
+ * @param {Object} operator 操作人員資訊
  */
-function api_updateBooking(data) {
+function api_updateBooking(data, operator) {
   try {
-    return updateBookingRecord(data);
+    const res = updateBookingRecord(data);
+    if (res && res.success && typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : (data.groupName || ""),
+        operatorRole: operator ? operator.role : "SALES",
+        module: "BOOKING",
+        action: "UPDATE",
+        target: data.bookingNo,
+        summary: `修改預約單 [${data.bookingNo}]，活動日: ${data.eventDate}，商品: ${data.productName}，數量: ${data.qty} 套`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+    return res;
   } catch (err) {
     return { success: false, message: "修改預約失敗: " + err.message };
   }
@@ -643,10 +747,25 @@ function api_updateBooking(data) {
  * API: 刪除既有預約單 (支援 rowIndex 避免同單號誤刪)
  * @param {string} bookingNo 預約單號
  * @param {number} [rowIndex] 試算表列號
+ * @param {Object} operator 操作人員資訊
  */
-function api_deleteBooking(bookingNo, rowIndex) {
+function api_deleteBooking(bookingNo, rowIndex, operator) {
   try {
-    return deleteBookingRecord(bookingNo, rowIndex);
+    const res = deleteBookingRecord(bookingNo, rowIndex);
+    if (res && res.success && typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "SALES",
+        module: "BOOKING",
+        action: "DELETE",
+        target: bookingNo,
+        summary: `刪除預約單 [${bookingNo}]，列號: ${rowIndex || "未知"}`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+    return res;
   } catch (err) {
     return { success: false, message: "刪除預約失敗: " + err.message };
   }
@@ -714,11 +833,27 @@ function api_getAllMaterials() {
 /**
  * API: 建立或更新原物料品號主檔 (寫入 02_材料品號對照表 底表)
  * @param {Object} matData { itemCode, itemName, category, color, note }
+ * @param {Object} operator 操作人員資訊
  */
-function api_saveMaterial(matData) {
+function api_saveMaterial(matData, operator) {
   try {
     const list = saveDynamicMasterMaterial(matData);
     generate45DaysProjection();
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "INVENTORY",
+        module: "MATERIAL",
+        action: "UPDATE",
+        target: matData.itemCode,
+        summary: `儲存/更新原物料主檔【${matData.itemName}】(品號: ${matData.itemCode}, 分類: ${matData.category})`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
     return {
       success: true,
       message: `原物料【${matData.itemName}】(品號: ${matData.itemCode}) 已成功儲存！`,
@@ -733,12 +868,28 @@ function api_saveMaterial(matData) {
  * API: 切換原物料啟用/停用狀態
  * @param {string} itemCode 材料品號
  * @param {string} targetStatus 目標狀態 ("啟用" 或 "停用")
+ * @param {Object} operator 操作人員資訊
  */
-function api_toggleMaterialStatus(itemCode, targetStatus) {
+function api_toggleMaterialStatus(itemCode, targetStatus, operator) {
   try {
     const status = (targetStatus === "停用") ? "停用" : "啟用";
     const list = toggleDynamicMasterMaterialStatus(itemCode, status);
     generate45DaysProjection();
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "INVENTORY",
+        module: "MATERIAL",
+        action: "UPDATE",
+        target: itemCode,
+        summary: `切換材料 [${itemCode}] 狀態為【${status}】`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
     return {
       success: true,
       message: `材料品號 [${itemCode}] 已成功標記為【${status}】！`,
@@ -752,21 +903,38 @@ function api_toggleMaterialStatus(itemCode, targetStatus) {
 /**
  * API: 停用原物料品號 (相容舊呼叫)
  * @param {string} itemCode 材料品號
+ * @param {Object} operator 操作人員資訊
  */
-function api_deleteMaterial(itemCode) {
-  return api_toggleMaterialStatus(itemCode, "停用");
+function api_deleteMaterial(itemCode, operator) {
+  return api_toggleMaterialStatus(itemCode, "停用", operator);
 }
 
 /**
  * API: 儲存或更新 DIY 商品及其材料配方 (可新增或修改材料與用量)
  * @param {Object} productData { id, name, desc }
  * @param {Array<Object>} bomItems [ { category, qty, note } ]
+ * @param {Object} operator 操作人員資訊
  */
-function api_saveProductAndBOM(productData, bomItems) {
+function api_saveProductAndBOM(productData, bomItems, operator) {
   try {
     const res = saveDynamicProductAndBOM(productData, bomItems);
     // 重新試算 45 天動態推移
     generate45DaysProjection();
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "ADMIN",
+        module: "PRODUCT",
+        action: "UPDATE",
+        target: productData.id,
+        summary: `儲存商品【${productData.name}】(ID: ${productData.id}) 及其 BOM 配方 (${bomItems ? bomItems.length : 0} 項)`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
     return {
       success: true,
       message: `商品【${productData.name}】及其 BOM 配方已成功儲存並同步至系統！`,
@@ -781,11 +949,27 @@ function api_saveProductAndBOM(productData, bomItems) {
 /**
  * API: 刪除指定 DIY 商品及其 BOM 配方
  * @param {string} productId 商品代碼
+ * @param {Object} operator 操作人員資訊
  */
-function api_deleteProduct(productId) {
+function api_deleteProduct(productId, operator) {
   try {
     const res = deleteDynamicProduct(productId);
     generate45DaysProjection();
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "ADMIN",
+        module: "PRODUCT",
+        action: "DELETE",
+        target: productId,
+        summary: `刪除 DIY 商品 [${productId}] 及其 BOM 配方`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
     return {
       success: true,
       message: `商品代碼 [${productId}] 及其 BOM 配方已成功刪除！`,
@@ -800,11 +984,26 @@ function api_deleteProduct(productId) {
 /**
  * API: 主管端現場 3 秒抽盤回報
  */
-function api_recordCycleCount(itemCode, actualQty, staffName, note) {
+function api_recordCycleCount(itemCode, actualQty, staffName, note, operator) {
   try {
     const res = recordCycleCount(itemCode, actualQty, staffName, note);
     // 抽盤後自動重新生成推移表
     generate45DaysProjection();
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: staffName || (operator ? operator.name : ""),
+        operatorRole: operator ? operator.role : "INVENTORY",
+        module: "STOCK",
+        action: "UPDATE",
+        target: itemCode,
+        summary: `現場抽盤回報品號 [${itemCode}]，盤點實數: ${actualQty}，盤點人: ${staffName || "無"}，差異: ${res.diff !== undefined ? res.diff : "無"}`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
     return res;
   } catch (err) {
     return { success: false, message: "抽盤回報失敗: " + err.message };
@@ -814,7 +1013,7 @@ function api_recordCycleCount(itemCode, actualQty, staffName, note) {
 /**
  * API: 主管端貼上 ERP 原始文字 (TSV/Excel) 一鍵清洗
  */
-function api_importERPPastedText(text) {
+function api_importERPPastedText(text, operator) {
   try {
     if (!text || !text.trim()) {
       return { success: false, message: "貼上的內容為空" };
@@ -830,6 +1029,21 @@ function api_importERPPastedText(text) {
 
     const res = importERPRawData(dataRows);
     generate45DaysProjection();
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "INVENTORY",
+        module: "ERP",
+        action: "IMPORT",
+        target: "ERP貼上文字",
+        summary: `貼上 ERP 文字清洗匯入，解析 ${dataRows.length} 列，640 倉納入 ${res.cleanResult ? res.cleanResult.count : 0} 項`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
     return res;
   } catch (err) {
     return { success: false, message: "匯入清洗失敗: " + err.message };
@@ -839,10 +1053,25 @@ function api_importERPPastedText(text) {
 /**
  * API: 主管端一鍵重置載入真實 ERP 範例資料
  */
-function api_resetSampleERP() {
+function api_resetSampleERP(operator) {
   try {
     const res = importERPRawData(SAMPLE_ERP_RAW_ROWS);
     generate45DaysProjection();
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "INVENTORY",
+        module: "ERP",
+        action: "IMPORT",
+        target: "ERP真實範例資料",
+        summary: `一鍵重置載入真實 ERP 範例資料，共納入 640 倉物料`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
+
     return res;
   } catch (err) {
     return { success: false, message: "重置失敗: " + err.message };
@@ -852,8 +1081,9 @@ function api_resetSampleERP() {
 /**
  * API: 處理進貨驗收單核銷與自動對比入庫 (支援全數到貨、短交結案清零、短交保留在途、無單直接配貨)
  * @param {Object} receiptData { receiptNo, receiptDate, vendorName, items: [ { itemCode, itemName, receivedQty, poNumber, actionType, originalPoQty, shortageQty, note } ] }
+ * @param {Object} operator 操作人員資訊
  */
-function api_processGoodsReceipt(receiptData) {
+function api_processGoodsReceipt(receiptData, operator) {
   try {
     if (!receiptData || !receiptData.items || !Array.isArray(receiptData.items) || receiptData.items.length === 0) {
       return { success: false, message: "未包含任何有效驗收品項！" };
@@ -984,6 +1214,20 @@ function api_processGoodsReceipt(receiptData) {
 
     // 重新滾動 45 天推移與在庫庫存
     generate45DaysProjection();
+
+    if (typeof writeAuditLog === "function") {
+      writeAuditLog({
+        operatorEmpNo: operator ? operator.empNo : "",
+        operatorName: operator ? operator.name : "",
+        operatorRole: operator ? operator.role : "INVENTORY",
+        module: "PROCUREMENT",
+        action: "UPDATE",
+        target: recNo,
+        summary: `處理進貨驗收單 [${recNo}]，全到: ${fullCount}，短交結案: ${shortCloseCount}，短交留在途: ${shortKeepCount}，直接配貨: ${directCount}`,
+        status: "成功",
+        source: "WEB_APP"
+      });
+    }
 
     return {
       success: true,

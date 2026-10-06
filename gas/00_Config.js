@@ -15,7 +15,14 @@ const CONFIG = {
     CYCLE_COUNT_LOG: "04_現場抽盤流水帳",
     PROCUREMENT: "05_在途採購清冊",
     BOOKING_RECORDS: "06_預約登記明細",
-    ROLLING_PROJECTION: "07_45天動態推移底表"
+    ROLLING_PROJECTION: "07_45天動態推移底表",
+    AUDIT_LOG: "10_系統操作日誌"
+  },
+
+  // 稽核日誌常數
+  AUDIT: {
+    RETENTION_DAYS: 180, // 主表保留 180 天
+    PAGE_SIZE: 50
   },
 
   // 帳號權限角色 (RBAC)
