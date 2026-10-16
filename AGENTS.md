@@ -12,12 +12,17 @@
 ---
 
 ## 🔒 二、 核心資安與資料隔離守則 (Security & Data Isolation)
-1. **參考資料絕對隔離**：
+1. **機敏資訊全域去敏原則 (Sensitive Data Sanitization)**：
+   - 嚴禁於程式碼、設定、測試、文件與提交中出現真實人名、公司工號、單位部門名稱、真實 ERP 貨號 (品號)、精密工業規格、真實資料庫/試算表 ID、雲端 Script ID、Web App 部署 URL、個人 Email、連線金鑰與環境變數。
+   - 範例與主檔統一採用標準示範代碼（如 `MAT-xxx`, `ADM00001`）與佔位符（`YOUR_SPREADSHEET_ID`）。
+2. **參考資料與機密檔案絕對隔離 (Zero Secret Leak)**：
    - 專案根目錄下之 `/參考資料不要上推/`（含企劃書、BOM與分類參考檔、ERP原始匯出檔）已列入 `.gitignore`，**嚴格禁止上推至遠端儲存庫**。
-2. **機密檔案零追蹤 (Zero Secret Leak)**：
-   - `.env`, `.env.*`, `*.pem`, `*.key`, `credentials.json`, `service_account*.json` 等敏感設定檔嚴禁納入 Git 追蹤。
-   - 程式碼中嚴禁硬編碼任何密碼、API 金鑰或私密試算表 ID。
-3. **資料庫防覆蓋機制**：
+   - `.env`, `.env.*`, `*.pem`, `*.key`, `credentials.json`, `.clasp.json` 等敏感設定檔嚴禁納入 Git 追蹤，僅保留 `.sample` 或 `.example` 範本。
+3. **三道強制確認關卡 (Three-Checkpoint Mandatory Gate)**：
+   - **開始作業前**：清查 `.gitignore` 隔離設定，阻絕未去敏真實資料導入。
+   - **上傳 Commit 時**：執行 `git diff --cached` 嚴格審查；若發現歷史紀錄有洩漏，強制執行 Git 歷史抹除（Orphan Wipeout），嚴禁單純以新 commit 覆蓋。
+   - **結束交接時**：清查交接文件（`PROJECT_HANDOVER.md`），確認 100% 採用佔位符，生產參數僅允許透過離線安全管道交付。
+4. **資料庫防覆蓋機制**：
    - ERP 資料清洗匯入時，需精確過濾小計、合計與非 DIY 物料，避免誤沖銷原有有效數據。
 
 ---
