@@ -1,0 +1,17 @@
+{
+  "scriptId": "YOUR_APPS_SCRIPT_ID_HERE",
+  "rootDir": "gas",
+  "parentId": "YOUR_GOOGLE_SPREADSHEET_ID_HERE",
+  "scriptExtensions": [
+    ".js",
+    ".gs"
+  ],
+  "htmlExtensions": [
+    ".html"
+  ],
+  "jsonExtensions": [
+    ".json"
+  ],
+  "filePushOrder": [],
+  "skipSubdirectories": false
+}

@@ -1,0 +1,10 @@
+{
+  "name": "diy-inventory-system-agent",
+  "version": "1.0",
+  "projectType": "web-app",
+  "instructions": "本專案為 DIY 活動物料庫存與預約接單管理系統。架構包含 Google Sheets 資料庫底表、Google Apps Script (GAS) 後端清洗運算引擎與輕量 Web App 前端。嚴禁將「參考資料不要上推/」上傳至遠端 Git，且必須遵循 100% 繁體中文（台灣）原則與 15 天交期時間閘門接單防呆規範。",
+  "subagents": {
+    "enableDynamic": true,
+    "maxConcurrent": 2
+  }
+}
