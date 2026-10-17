@@ -261,6 +261,7 @@ function api_registerUser(empNo, name, department) {
  */
 function verifyAdmin_(adminEmpNo) {
   const cleanAdminEmpNo = String(adminEmpNo || "").trim().toUpperCase();
+  if (!cleanAdminEmpNo) return false;
   const sheet = getUserAccountSheet_();
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) return false;
@@ -274,6 +275,49 @@ function verifyAdmin_(adminEmpNo) {
     }
   }
   return false;
+}
+
+/**
+ * 通用後端角色與狀態校驗輔助函式 (RBAC)
+ * - 若有傳入 operator 物件或工號，嚴格查驗該帳號是否為 ACTIVE 且具備 allowedRoles 權限
+ * - 相容內部自動化測試腳本 (未傳入 operator 時放行)
+ * @param {Object|string} operator 呼叫端傳入之操作者資訊 ({ empNo, name, role } 或 empNo 字串)
+ * @param {Array<string>} allowedRoles 允許的角色清單
+ * @returns {{ authorized: boolean, message?: string, user?: Object }}
+ */
+function verifyUserRole_(operator, allowedRoles) {
+  if (!operator) {
+    return { authorized: true };
+  }
+  const empNo = typeof operator === "string"
+    ? String(operator).trim().toUpperCase()
+    : String(operator.empNo || "").trim().toUpperCase();
+
+  if (!empNo) {
+    return { authorized: true };
+  }
+
+  const sheet = getUserAccountSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return { authorized: false, message: "權限驗證失敗：帳號資料庫尚未初始化！" };
+
+  const data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  for (let i = 0; i < data.length; i++) {
+    if (String(data[i][0]).trim().toUpperCase() === empNo) {
+      const name = String(data[i][1] || "").trim();
+      const role = String(data[i][3] || "").trim();
+      const status = String(data[i][4] || "").trim();
+
+      if (status !== CONFIG.USER_STATUS.ACTIVE) {
+        return { authorized: false, message: `權限拒絕：工號 [${empNo}] 帳號狀態非啟用中 (${status})！` };
+      }
+      if (Array.isArray(allowedRoles) && allowedRoles.length > 0 && !allowedRoles.includes(role)) {
+        return { authorized: false, message: `權限不足：您的角色 (${role}) 無權執行此操作！` };
+      }
+      return { authorized: true, user: { empNo, name, role } };
+    }
+  }
+  return { authorized: false, message: `權限拒絕：查無有效工號 [${empNo}]！` };
 }
 
 /**

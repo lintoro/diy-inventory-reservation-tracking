@@ -7,6 +7,10 @@
  * @returns {Object} cleanedMap: { [itemCode]: { qty, itemName, warehouse } }
  */
 function cleanERPDataFromRawSheet() {
+  if (typeof _EXEC_CACHE !== "undefined" && _EXEC_CACHE.erpCleanResult) {
+    return _EXEC_CACHE.erpCleanResult;
+  }
+
   const ss = getSpreadsheet();
   const rawSheet = ss.getSheetByName(CONFIG.SHEETS.ERP_RAW);
   const lastRow = rawSheet.getLastRow();
@@ -55,12 +59,17 @@ function cleanERPDataFromRawSheet() {
     stockMap[itemCode].qty += qtyVal;
   });
 
-  return {
+  const result = {
     success: true,
     message: `成功清洗 ERP 資料，鎖定 640 倉共納入 ${validCount} 項物料`,
     count: validCount,
     stockMap: stockMap
   };
+
+  if (typeof _EXEC_CACHE !== "undefined") {
+    _EXEC_CACHE.erpCleanResult = result;
+  }
+  return result;
 }
 
 /**
@@ -79,8 +88,11 @@ function recordCycleCount(itemCode, actualQty, staffName, note) {
   const erpItem = erpCleanResult.stockMap[itemCode];
   const erpQty = erpItem ? erpItem.qty : 0;
   
-  // 取得品名或種類
-  const mat = CONFIG.MASTER_MATERIALS.find(m => m.itemCode === itemCode);
+  // 取得品名或種類 (優先從動態材料主檔查找)
+  const allMaterials = (typeof getDynamicMasterMaterials === "function")
+    ? getDynamicMasterMaterials(true)
+    : CONFIG.MASTER_MATERIALS;
+  const mat = allMaterials.find(m => m.itemCode === itemCode);
   const itemName = mat ? `${mat.itemName} (${mat.category})` : (erpItem ? erpItem.itemName : "自訂物料");
 
   // 計算盤差
@@ -109,6 +121,10 @@ function recordCycleCount(itemCode, actualQty, staffName, note) {
     note || ""
   ]);
 
+  if (typeof clearExecCache_ === "function") {
+    clearExecCache_("INVENTORY");
+  }
+
   return {
     success: true,
     itemCode: itemCode,
@@ -125,6 +141,10 @@ function recordCycleCount(itemCode, actualQty, staffName, note) {
  * @returns {Array<Object>} 核心材料清單及其當前生效庫存
  */
 function getEffectiveInventory() {
+  if (typeof _EXEC_CACHE !== "undefined" && _EXEC_CACHE.effectiveInventory) {
+    return _EXEC_CACHE.effectiveInventory;
+  }
+
   const ss = getSpreadsheet();
   
   // 1. 取得 ERP 640 倉最新帳面數
@@ -138,7 +158,7 @@ function getEffectiveInventory() {
 
   if (logLastRow > 1) {
     const todayStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy/MM/dd");
-    const logData = logSheet.getRange(2, 1, logLastRow - 1, 8).getValues();
+    const logData = logSheet.getRange(2, 1, logLastRow - 1, 6).getValues();
     
     logData.forEach(row => {
       const rawDateVal = row[0];
@@ -146,11 +166,9 @@ function getEffectiveInventory() {
       if (rawDateVal instanceof Date) {
         logDateStr = Utilities.formatDate(rawDateVal, "Asia/Taipei", "yyyy/MM/dd");
       } else if (rawDateVal) {
-        const parsedDate = new Date(String(rawDateVal));
-        if (!isNaN(parsedDate.getTime())) {
-          logDateStr = Utilities.formatDate(parsedDate, "Asia/Taipei", "yyyy/MM/dd");
-        } else {
-          logDateStr = String(rawDateVal).substring(0, 10);
+        const s = String(rawDateVal).trim();
+        if (s.length >= 10) {
+          logDateStr = s.substring(0, 10).replace(/-/g, "/");
         }
       }
 
@@ -238,7 +256,7 @@ function getEffectiveInventory() {
 
     // 若今日無盤點，生效庫存 = ERP 帳面數 + 採購已到貨入庫數
     let effectiveQty = erpQty + arrivedQty;
-    let source = arrivedQty > 0 ? `ERP帳面(${erpQty}) + 到貨入庫(${arrivedQty})` : "未更動 (ERP帳面兜底)";
+    let source = arrivedQty > 0 ? `ERP帳面(${erpQty}) + 到貨入庫(${arrivedQty})` : "ERP帳面兜底";
     let diff = 0;
     let hasCountToday = false;
     let cycleCountQty = null;
@@ -267,6 +285,9 @@ function getEffectiveInventory() {
     };
   });
 
+  if (typeof _EXEC_CACHE !== "undefined") {
+    _EXEC_CACHE.effectiveInventory = effectiveList;
+  }
   return effectiveList;
 }
 
@@ -335,6 +356,10 @@ function importERPRawData(rawRows) {
 
   rawSheet.getRange(2, 1, formattedRows.length, formattedRows[0].length).setValues(formattedRows);
 
+  if (typeof clearExecCache_ === "function") {
+    clearExecCache_("INVENTORY");
+  }
+
   // 立即觸發清洗
   const cleanResult = cleanERPDataFromRawSheet();
   return {
@@ -365,6 +390,11 @@ function menu_importAndCleanERP() {
  */
 function api_uploadAndCleanERP(fileRows, fileName, operator) {
   try {
+    if (typeof verifyUserRole_ === "function" && operator) {
+      const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+      if (!auth.authorized) return { success: false, message: auth.message };
+    }
+
     if (!fileRows || !Array.isArray(fileRows) || fileRows.length === 0) {
       return { success: false, message: "上傳的檔案無有效資料列！" };
     }

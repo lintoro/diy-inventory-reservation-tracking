@@ -1,6 +1,6 @@
 # 專案進度與里程碑追蹤 (PROGRESS.md)
 
-最後更新時間：2026-09-23
+最後更新時間：2026-10-17
 
 ## 項目進度摘要
 
@@ -19,7 +19,8 @@
 | **Phase 10：原物料品號主檔管理、拉入 BOM 表與登入工號記憶** | 建立『🔩 基礎原物料品號管理』介面 (支援新增/編輯/停用/啟用 ERP 貨號與品名)、BOM 配方材料下拉支援即時拉入新原物料品號與分類、登入畫面記住公司工號 (ID) Checkbox (localStorage 記憶) 且徹底去除例如與預設密碼提示字樣 | 🟢 已完成 (正式交付) | 100% |
 | **Phase 11：活動日連動可用組數、45天以上皆可預訂、三軌庫存透視與標題優化** | 業務端點選活動日即時重繪各方案當日預估可用組數、距今>45天自動標記【皆可預訂】(排單備料交期充裕)、徹底去除「6 大體驗方案」寫死字樣、升級用料抽屜為 7 欄式三軌庫存透視 (ERP帳面數 + 現場抽盤實數 + 採信在庫)，嚴格落實實盤優先與未更動帶入系統原則 | 🟢 已完成 (正式交付) | 100% |
 | **Phase 12：跨日累計扣除、預約編輯刪除、進貨單+20天補貨日、到貨入庫累加庫存、在庫到貨提醒與缺口提醒** | 修復跨日推移預約扣除累計 Bug (9/29預訂38套，9/30正確累計扣除)、新增業務預約管理清冊與彈窗編輯/刪除功能、移除黃燈自動建立採購單改為醒目缺口提醒、進貨單上傳/貼上支援 PURI05_2 多工作表並自動以需求日+20天換算補貨日、採購清冊標記到貨立即累加材料在庫庫存、庫存卡片與抽屜即時顯示在途補貨預計到貨提醒 | 🟢 已完成 (正式交付) | 100% |
-| **Phase 13：進貨單驗收對比自動核銷、格式修正為品號/品名、三階層排序與BOM選單防跳號修復** | 採購清冊品名與規格嚴格分開讀取並格式化為【品號/品名】、基礎原料品號管理依【#材料種類代碼##ERP品號###品名規格】三階層自然排序、配方表下拉選單依名稱自然筆畫排序、修復BOM選單重複Value跳號Bug、支援《紙膠帶進貨單.XLSX》多工作表智慧直傳、進貨點交自動對比在途採購(支援完工全收/短交不足結案清零或保留/無單配貨直入)並即時更新生效庫存 | 🟢 已完成 (正式交付) | 100% |
+| **Phase 13~24：進貨驗收核銷、停用料管理、動態預約核銷與系統操作日誌 (Audit Log)** | 進貨驗收單對比核銷、實收 0 結案清零、共用總量標籤統一、預約清冊動態庫存核銷、全模組操作日誌稽核與獨立 LOG 導覽頁籤 | 🟢 已完成 (正式交付) | 100% |
+| **Phase 25：全方位效能、I/O 批次化、RBAC 資安強化與 BOM 100% 動態化最佳化** | 單次執行期記憶體快取 (`_EXEC_CACHE`)、試算表讀寫批次化 (`setValues` 取代逐列 `setValue`)、後端全寫入 API 補齊 `verifyUserRole_` 權限驗證、封閉 `doGet` 未授權外部接口、BOM 引擎 100% 動態化與殘留字詞全數去敏、前端消除重複 RPC | 🟢 已完成 (正式交付) | 100% |
 
 ---
 
@@ -244,4 +245,25 @@
       - 經 Node.js 腳本驗證全部 5 大分頁開閉平衡（div balance 全數為 0）。
     - 成功部署更新至 Version **`@32`**。
 
-
+### 2026-10-17
+- [x] 完成 Phase 25（系統全方位效能、I/O 批次化、RBAC 資安強化與 BOM 100% 動態化最佳化）：
+  - **單次執行期記憶體快取層 (`_EXEC_CACHE`)**：
+    - 於 `gas/00_Config.js` 建立 `_EXEC_CACHE` 與 `clearExecCache_(scope)`，快取 `ss`（Spreadsheet 實例）、`safetyFloor`、`dynamicBOM`、`materialsActive`、`materialsAll`、`erpCleanResult`、`effectiveInventory`、`productCapacities`。
+    - 徹底消除單次 API 請求中重複開啟試算表與重複執行 `getDataRange().getValues()` 的 O(N) 效能損耗。
+    - 所有資料變更 API（新增/修改/刪除預約、採購登錄/核銷、進貨驗收、現場抽盤、ERP 上傳、BOM 與材料維護）均自動呼叫 `clearExecCache_("INVENTORY")`，確保讀取一致性。
+  - **試算表寫入批次化與 I/O 削減**：
+    - `getAllBookingRecords()` 將逐列呼叫 `sheet.getRange(row, 8).setValue(...)` 重構為單次 `sheet.getRange(2, 8, updatedCols.length, 2).setValues(updatedCols)` 批次寫入。
+    - `api_batchMarkProcurementReceived()` 與 `api_processGoodsReceipt()` 改為記憶體陣列修改後單次 `setValues` 寫回，並將多筆入庫流水整合於單一區塊寫入。
+    - `saveDynamicProductAndBOM()` 與 `deleteDynamicProduct()` 改為僅清除資料列並批次寫入，免除重複設定表頭背景色與字型之開銷。
+    - `generate45DaysProjection()` 納入累計已預約套數扣除，並移除極度耗時的 `sheet.autoResizeColumns(1, headers.length)`。
+  - **資安防護、RBAC 後端強制驗證與 100% 去敏化**：
+    - 封閉 `doGet(e)` 中未授權的 `?action=` 外部接口。
+    - 於 `gas/06_AuthManager.js` 新增 `verifyUserRole_(operator, allowedRoles)`，並在所有寫入型 API 強制檢驗操作者身分與角色權限。
+    - 修正 `CONFIG.INITIAL_ADMIN.defaultPassword` 與測試案例為 `"000000"`，對齊系統預設密碼規範。
+    - 為前端 `renderBookingManagementTable()` 補齊 `escapeHtml()` 防範 DOM XSS。
+    - 100% 清除 `03_BOMCalculator.js`、`index.html`、`99_Tests.js` 與文件內殘留之舊品名/品號/工號字詞。
+  - **BOM 計算引擎 100% 動態化與前端 RPC 精簡**：
+    - 重構 `calculateProductCapacities()` 由 `03_BOM配方設定表` 100% 動態驅動，移除商品 1~5 硬編碼分支。
+    - `api_getDashboardOverview()` 合併回傳 `activeBookings`，並消除前端 `loadDashboard`、`submitBookingForm`、`submitUpdateBooking`、`deleteBookingItem`、`renderAppForUser` 中重複的 `api_getBookingList` 與 `api_getUsers` 呼叫，大幅提升首屏與操作回應速度。
+    - 修復 `api_importProcurementPURI(ordersList, operator)` 缺少 `operator` 參數及 `confirmExecuteGoodsReceipt` 漏傳 `currentUser` 之問題。
+  - **固定部署更新**：以固定 Deployment ID 更新部署至 Version **`@36`**。

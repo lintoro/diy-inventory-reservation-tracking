@@ -187,7 +187,7 @@ function test_Phase3_BOMCapacity() {
   // 1. 基於當前真實生效庫存進行基準換算
   const realCapacities = calculateProductCapacities();
   
-  // 1.1 手能生巧驗證 (HTB-50 應為 675 套)
+  // 1.1 手能生巧驗證 (小工具應為 675 套)
   assert(realCapacities["1"] && realCapacities["1"].maxCapacity === 675, "手能生巧: 可接單上限為 675 套 (1:1對齊小工具庫存)");
 
   // 1.2 胖胖盒款短板驗證 (胖胖盒專用箱僅剩 7 個，應精確受限為 7 套)
@@ -219,7 +219,7 @@ function test_Phase3_BOMCapacity() {
   });
   const mockCapacitiesB = calculateProductCapacities(mockStockShared);
   assert(mockCapacitiesB["2"].maxCapacity === 3, "邊界測試B: 胖胖盒款受限共用框圖上限為 3 套");
-  assert(mockCapacitiesB["3"].maxCapacity === 3, "邊界測試B: TB-200款受限共用框圖上限為 3 套");
+  assert(mockCapacitiesB["3"].maxCapacity === 3, "邊界測試B: 中型工具箱款受限共用框圖上限為 3 套");
   assert(mockCapacitiesB["2"].bottleneckCategory.includes("框圖"), "邊界測試B: 短板正確識別為框圖 (共用料)");
 
   // UI 彈窗回報
@@ -361,7 +361,7 @@ function test_Phase6_AuthAndERPUpload() {
   const loginFail = api_login("ADM00001", "wrong_password");
   assert(loginFail.success === false, "管理者錯誤密碼登入被成功阻擋 (PASS)");
 
-  const loginAdminSuccess = api_login("ADM00001", "password123");
+  const loginAdminSuccess = api_login("ADM00001", "000000");
   assert(loginAdminSuccess.success === true, "管理者使用預設密碼 000000 成功登入 (PASS)");
   assert(loginAdminSuccess.user.role === "ADMIN", "管理者角色確認為 ADMIN (PASS)");
   assert(loginAdminSuccess.user.mustChangePassword === true, "初始管理者標記首次需改密碼 mustChangePassword === true (PASS)");
@@ -372,7 +372,7 @@ function test_Phase6_AuthAndERPUpload() {
   assert(regRes.success === true, `新同仁線上申請成功提交 (${testSalesEmpNo})`);
 
   // 待審核狀態下嘗試登入 ➔ 應阻擋
-  const loginPending = api_login(testSalesEmpNo, "password123");
+  const loginPending = api_login(testSalesEmpNo, "000000");
   assert(loginPending.success === false && loginPending.message.includes("待審核"), "待審核同仁登入被正確攔截 (PASS)");
 
   // 4. 管理者審核名單查詢與核准開通
@@ -385,16 +385,16 @@ function test_Phase6_AuthAndERPUpload() {
   assert(approveRes.success === true, "管理者成功核准開通並指派為 SALES 角色");
 
   // 5. 測試核准後同仁登入與首次強制修改密碼
-  const loginApproved = api_login(testSalesEmpNo, "password123");
+  const loginApproved = api_login(testSalesEmpNo, "000000");
   assert(loginApproved.success === true, "核准同仁以預設密碼 000000 成功登入");
   assert(loginApproved.user.mustChangePassword === true, "核准同仁標記需修改密碼 (PASS)");
 
   // 修改密碼：禁止使用預設密碼
-  const chgToSame = api_changePassword(testSalesEmpNo, "password123", "password123");
+  const chgToSame = api_changePassword(testSalesEmpNo, "000000", "000000");
   assert(chgToSame.success === false, "禁止修改為相同之預設密碼 000000 (PASS)");
 
   // 正確修改密碼為新密碼
-  const chgSuccess = api_changePassword(testSalesEmpNo, "password123", "pass123456");
+  const chgSuccess = api_changePassword(testSalesEmpNo, "000000", "pass123456");
   assert(chgSuccess.success === true, "成功修改新密碼並解除首次修改限制 (PASS)");
 
   // 以新密碼登入
@@ -788,7 +788,7 @@ function test_Phase12_ComprehensiveUpgrades() {
   const samplePURIList = [
     {
       reqNo: testReqNo,
-      itemCode: "5D3000002",
+      itemCode: "MAT-TAP-004",
       itemName: "mt 紙膠帶7mm",
       qty: 200,
       reqDate: "2026/08/28",
@@ -812,7 +812,7 @@ function test_Phase12_ComprehensiveUpgrades() {
   // 5. 驗證需求 5：標記到貨入庫後，數量立即加入庫存中
   // 記錄核銷前之有效庫存
   const invBefore = getEffectiveInventory();
-  const tapeMatBefore = invBefore.find(m => m.itemCode === "5D3000002");
+  const tapeMatBefore = invBefore.find(m => m.itemCode === "MAT-TAP-004");
   const qtyBeforeArrival = tapeMatBefore ? tapeMatBefore.effectiveQty : 0;
 
   // 標記到貨核銷
@@ -821,7 +821,7 @@ function test_Phase12_ComprehensiveUpgrades() {
 
   // 檢查核銷後之有效庫存是否增加 200
   const invAfter = getEffectiveInventory();
-  const tapeMatAfter = invAfter.find(m => m.itemCode === "5D3000002");
+  const tapeMatAfter = invAfter.find(m => m.itemCode === "MAT-TAP-004");
   const qtyAfterArrival = tapeMatAfter ? tapeMatAfter.effectiveQty : 0;
   assert(qtyAfterArrival === qtyBeforeArrival + 200, `到貨入庫後，材料生效庫存立即累加 +200 捲 (前: ${qtyBeforeArrival} ➔ 後: ${qtyAfterArrival}) (PASS)`);
 

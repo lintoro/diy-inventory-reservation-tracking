@@ -6,24 +6,6 @@
  * Web App 入口函式
  */
 function doGet(e) {
-  if (e && e.parameter && e.parameter.action) {
-    const action = e.parameter.action;
-    let res = { success: false, message: "未知 action" };
-    if (action === "test_Phase12") {
-      res = test_Phase12_ComprehensiveUpgrades();
-    } else if (action === "api_getDashboardOverview") {
-      res = api_getDashboardOverview();
-    } else if (action === "api_getProjectionByDate") {
-      res = api_getProjectionByDate(e.parameter.date || "2026/09/30");
-    } else if (action === "api_getBookingList") {
-      res = api_getBookingList();
-    } else if (action === "api_getProcurementList") {
-      res = api_getProcurementList();
-    }
-    return ContentService.createTextOutput(JSON.stringify(res))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
   const template = HtmlService.createTemplateFromFile("index");
   return template.evaluate()
     .setTitle("DIY_物料庫存與預約接單管理系統")
@@ -32,21 +14,16 @@ function doGet(e) {
 }
 
 /**
- * API: 取得系統儀表板總覽資料 (給主管看板與業務端初始載入)
- */
-/**
- * API: 取得系統儀表板總覽資料 (給主管看板與業務端初始載入)
+ * API: 取得系統儀表板總覽資料 (給主管看板與業務端初始載入，單一請求整合所有初始狀態)
  */
 function api_getDashboardOverview() {
   try {
     const capacities = calculateProductCapacities();
     const capacitiesList = Object.keys(capacities).map(id => capacities[id]);
-    const effectiveList = getEffectiveInventory();
     
-    // 取得「今天起 30 天內」之有效預約明細
-    const ss = getSpreadsheet();
-    const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
-    const bkLastRow = bkSheet.getLastRow();
+    // 一次取得並核銷有效預約清單，同時篩選「今天起 30 天內」之近期預約明細，避免重複讀取 06_預約登記明細
+    const bookingRes = api_getBookingList(false);
+    const activeBookings = (bookingRes && bookingRes.bookings) ? bookingRes.bookings : [];
     const recentBookings = [];
 
     const today = new Date();
@@ -54,49 +31,45 @@ function api_getDashboardOverview() {
     const inRecentDays = new Date(today.getTime() + CONFIG.DASHBOARD_RECENT_DAYS * 24 * 60 * 60 * 1000);
     inRecentDays.setHours(23, 59, 59, 999);
 
-    if (bkLastRow > 1) {
-      const bkRows = bkSheet.getRange(2, 1, bkLastRow - 1, 9).getValues();
-      bkRows.forEach(r => {
-        const groupName = String(r[4] || "");
-        const note = String(r[8] || "");
-        // 排除測試產生的假資料
-        if (groupName.includes("測試") || note.includes("測試")) return;
+    activeBookings.forEach(b => {
+      const groupName = String(b.groupName || "");
+      const note = String(b.note || "");
+      if (groupName.includes("測試") || note.includes("測試")) return;
 
-        let evDate = r[1] instanceof Date ? r[1] : new Date(String(r[1]));
-        if (!isNaN(evDate.getTime())) {
-          evDate.setHours(0, 0, 0, 0);
-          if (evDate >= today && evDate <= inRecentDays) {
-            let dateStr = Utilities.formatDate(evDate, "Asia/Taipei", "yyyy/MM/dd");
-            recentBookings.push({
-              bookingNo: r[0],
-              eventDate: dateStr,
-              productName: r[2],
-              qty: r[3],
-              groupName: groupName,
-              light: r[7],
-              status: r[8]
-            });
-          }
+      const evDate = new Date(String(b.eventDate || "").replace(/-/g, "/"));
+      if (!isNaN(evDate.getTime())) {
+        evDate.setHours(0, 0, 0, 0);
+        if (evDate >= today && evDate <= inRecentDays) {
+          recentBookings.push({
+            bookingNo: b.bookingNo,
+            eventDate: b.eventDate,
+            productName: b.productName,
+            qty: b.qty,
+            groupName: groupName,
+            light: b.light,
+            status: b.procurementStatus
+          });
         }
-      });
-      // 依活動日期由近到遠排序
-      recentBookings.sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
-    }
+      }
+    });
 
     // 取得在途採購清單 (排除測試假資料)
+    const ss = getSpreadsheet();
     const poSheet = ss.getSheetByName(CONFIG.SHEETS.PROCUREMENT);
-    const poLastRow = poSheet.getLastRow();
+    const poLastRow = poSheet ? poSheet.getLastRow() : 0;
     const pendingPOs = [];
     if (poLastRow > 1) {
       const poRows = poSheet.getRange(2, 1, poLastRow - 1, 9).getValues();
-      poRows.forEach(r => {
+      poRows.forEach((r, idx) => {
         const poNote = String(r[8] || "");
         const bookingRef = String(r[7] || "");
         if (poNote.includes("測試") || bookingRef.includes("測試")) return;
 
-        let orderDateStr = r[1] instanceof Date ? Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd") : String(r[1] || "");
-        let deadlineStr = r[2] instanceof Date ? Utilities.formatDate(r[2], "Asia/Taipei", "yyyy/MM/dd") : String(r[2] || "");
+        let orderDateStr = r[1] instanceof Date ? Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd") : String(r[1] || "").trim().substring(0, 10);
+        let deadlineStr = r[2] instanceof Date ? Utilities.formatDate(r[2], "Asia/Taipei", "yyyy/MM/dd") : String(r[2] || "").trim().substring(0, 10);
+        const statusStr = String(r[6] || "").trim();
         pendingPOs.push({
+          rowIndex: idx + 2,
           poNumber: String(r[0] || "").trim(),
           orderDate: orderDateStr,
           demandDate: orderDateStr,
@@ -105,21 +78,21 @@ function api_getDashboardOverview() {
           itemCode: String(r[3] || "").trim(),
           itemName: String(r[4] || "").trim(),
           qty: Number(r[5]) || 0,
-          status: String(r[6] || "").trim(),
+          status: statusStr,
           bookingNo: String(r[7] || "").trim(),
           refNo: String(r[7] || "").trim(),
-          note: poNote
+          note: poNote,
+          isReceived: (statusStr === "已到貨入庫")
         });
       });
       // 依預計到貨日由近到遠升冪排序
       pendingPOs.sort((a, b) => String(a.replenishmentDate || "").localeCompare(String(b.replenishmentDate || "")));
     }
 
-    // 散客保底配置
+    // 散客保底配置与動態設定 (皆命中 _EXEC_CACHE 記憶體快取)
     const safetyFloorCfg = getSafetyFloorConfig();
-
     const dynamicConfig = getDynamicProductsAndBOM();
-    const dynamicMaterials = getDynamicMasterMaterials();
+    const dynamicMaterials = getDynamicMasterMaterials(false);
 
     return {
       success: true,
@@ -128,6 +101,7 @@ function api_getDashboardOverview() {
       materials: dynamicMaterials,
       products: dynamicConfig.products,
       recentBookings: recentBookings,
+      activeBookings: activeBookings,
       pendingPOs: pendingPOs,
       safetyFloorConfig: safetyFloorCfg
     };
@@ -138,6 +112,7 @@ function api_getDashboardOverview() {
       capacities: {},
       capacitiesList: [],
       recentBookings: [],
+      activeBookings: [],
       pendingPOs: []
     };
   }
@@ -149,26 +124,8 @@ function api_getDashboardOverview() {
 function api_updateSafetyFloor(userEmpNo, weekday, weekend, specialDates) {
   try {
     const cleanEmpNo = String(userEmpNo || "").trim().toUpperCase();
-    // 檢查是否有權限 (INVENTORY 或 ADMIN)
-    const sheet = getUserAccountSheet_();
-    const lastRow = sheet.getLastRow();
-    let hasPermission = false;
-
-    if (lastRow > 1) {
-      const users = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
-      for (let i = 0; i < users.length; i++) {
-        if (String(users[i][0]).trim().toUpperCase() === cleanEmpNo) {
-          const role = String(users[i][3]).trim();
-          const status = String(users[i][4]).trim();
-          if (status === CONFIG.USER_STATUS.ACTIVE && (role === CONFIG.ROLES.INVENTORY || role === CONFIG.ROLES.ADMIN)) {
-            hasPermission = true;
-          }
-          break;
-        }
-      }
-    }
-
-    if (!hasPermission) {
+    const auth = verifyUserRole_(cleanEmpNo, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) {
       return { success: false, message: "權限不足：僅庫管人員或管理者可調整現場保底！" };
     }
 
@@ -179,8 +136,8 @@ function api_updateSafetyFloor(userEmpNo, weekday, weekend, specialDates) {
     if (typeof writeAuditLog === "function") {
       writeAuditLog({
         operatorEmpNo: cleanEmpNo,
-        operatorName: "",
-        operatorRole: "INVENTORY",
+        operatorName: auth.user ? auth.user.name : "",
+        operatorRole: auth.user ? auth.user.role : "INVENTORY",
         module: "CAPACITY",
         action: "UPDATE",
         target: "散客保底配置",
@@ -308,6 +265,9 @@ function api_checkEligibility(eventDateStr, productId, qty) {
  */
 function api_submitBooking(data, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.SALES, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const res = submitBookingRecord(
       data.eventDate,
       data.productId,
@@ -345,6 +305,9 @@ function api_submitBooking(data, operator) {
  */
 function api_createProcurementOrder(data, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const itemCode = String(data.itemCode || "").trim();
     const qty = Number(data.qty) || 0;
     const arrivalDateStr = String(data.arrivalDate || "").trim();
@@ -365,17 +328,19 @@ function api_createProcurementOrder(data, operator) {
       poNo = `PO-${dateCompact}-${String(count).padStart(3, "0")}`;
     }
 
-    // 查品名
-    const mat = CONFIG.MASTER_MATERIALS.find(m => m.itemCode === itemCode);
+    // 查品名 (優先從動態材料對照表查詢)
+    const allMats = (typeof getDynamicMasterMaterials === "function")
+      ? getDynamicMasterMaterials(true)
+      : CONFIG.MASTER_MATERIALS;
+    const mat = allMats.find(m => m.itemCode === itemCode);
     const itemName = mat ? `${mat.itemName} (${mat.category})` : itemCode;
 
-    // 最晚下單日：預設以到貨日 - 15天，或今日
+    // 預訂進貨日期 (若未填則預設今日 + 15天)
     let deadlineStr = nowStr;
     if (arrivalDateStr) {
       const arrD = new Date(arrivalDateStr.replace(/-/g, "/"));
       if (!isNaN(arrD.getTime())) {
-        const deadD = new Date(arrD.getTime() - (CONFIG.LEAD_TIME_DAYS * 24 * 60 * 60 * 1000));
-        deadlineStr = Utilities.formatDate(deadD, "Asia/Taipei", "yyyy/MM/dd");
+        deadlineStr = Utilities.formatDate(arrD, "Asia/Taipei", "yyyy/MM/dd");
       }
     }
 
@@ -390,6 +355,11 @@ function api_createProcurementOrder(data, operator) {
       "門市庫管採購",
       data.note || ""
     ]);
+
+    if (typeof clearExecCache_ === "function") {
+      clearExecCache_("INVENTORY");
+    }
+    generate45DaysProjection();
 
     if (typeof writeAuditLog === "function") {
       writeAuditLog({
@@ -422,6 +392,9 @@ function api_createProcurementOrder(data, operator) {
  */
 function api_markProcurementReceived(poNumber, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const cleanPo = String(poNumber || "").trim();
     if (!cleanPo) return { success: false, message: "採購單號不得為空" };
 
@@ -436,6 +409,9 @@ function api_markProcurementReceived(poNumber, operator) {
         const rowIndex = i + 2;
         poSheet.getRange(rowIndex, 7).setValue("已到貨入庫");
         
+        if (typeof clearExecCache_ === "function") {
+          clearExecCache_("INVENTORY");
+        }
         // 到貨後立即動態重新整理 45 天推移表 (物料庫存自動累加生效)
         generate45DaysProjection();
 
@@ -473,6 +449,9 @@ function api_markProcurementReceived(poNumber, operator) {
  */
 function api_batchMarkProcurementReceived(poNumberList, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     if (!poNumberList || !Array.isArray(poNumberList) || poNumberList.length === 0) {
       return { success: false, message: "未選取任何採購單" };
     }
@@ -489,11 +468,19 @@ function api_batchMarkProcurementReceived(poNumberList, operator) {
     for (let i = 0; i < data.length; i++) {
       const poNo = String(data[i][0]).trim();
       if (targetSet.has(poNo) && data[i][6] !== "已到貨入庫") {
-        poSheet.getRange(i + 2, 7).setValue("已到貨入庫");
+        data[i][6] = "已到貨入庫";
         updatedCount++;
       }
     }
 
+    if (updatedCount > 0) {
+      const statusCol = data.map(r => [r[6]]);
+      poSheet.getRange(2, 7, statusCol.length, 1).setValues(statusCol);
+    }
+
+    if (typeof clearExecCache_ === "function") {
+      clearExecCache_("INVENTORY");
+    }
     // 重新計算推移與庫存融合
     generate45DaysProjection();
 
@@ -524,9 +511,13 @@ function api_batchMarkProcurementReceived(poNumberList, operator) {
 /**
  * API: 匯入 PURI05 進貨單 (支援請購單號、品號、品名、請購數量、需求日期，自動 +20 天為補貨日)
  * @param {Array<Object>} ordersList [ { reqNo, itemCode, itemName, qty, reqDate, note } ]
+ * @param {Object} [operator] 操作人員資訊
  */
-function api_importProcurementPURI(ordersList) {
+function api_importProcurementPURI(ordersList, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     if (!ordersList || !Array.isArray(ordersList) || ordersList.length === 0) {
       return { success: false, message: "上傳或輸入的進貨單明細為空" };
     }
@@ -540,6 +531,9 @@ function api_importProcurementPURI(ordersList) {
 
     const validRows = [];
     let counter = 1;
+    const allMats = (typeof getDynamicMasterMaterials === "function")
+      ? getDynamicMasterMaterials(true)
+      : CONFIG.MASTER_MATERIALS;
 
     ordersList.forEach(item => {
       const itemCode = String(item.itemCode || "").trim();
@@ -554,7 +548,7 @@ function api_importProcurementPURI(ordersList) {
       }
 
       // 品名
-      const mat = (typeof getDynamicMasterMaterials === "function" ? getDynamicMasterMaterials() : CONFIG.MASTER_MATERIALS).find(m => m.itemCode === itemCode);
+      const mat = allMats.find(m => m.itemCode === itemCode);
       let itemName = String(item.itemName || "").trim();
       if (!itemName && mat) {
         itemName = `${mat.itemName} (${mat.category})`;
@@ -562,7 +556,7 @@ function api_importProcurementPURI(ordersList) {
         itemName = itemCode;
       }
 
-      // 需求日期與補貨日計算 (需求日期 + 20 天)
+      // 需求日期與補貨日計算 (需求日期 + 20 天；若傳入 arrivalDate 則支援直接使用)
       let reqDateStr = String(item.reqDate || item.demandDate || nowStr).trim().substring(0, 10).replace(/-/g, "/");
       let reqDateObj = new Date(reqDateStr);
       if (isNaN(reqDateObj.getTime())) {
@@ -570,9 +564,14 @@ function api_importProcurementPURI(ordersList) {
         reqDateStr = Utilities.formatDate(reqDateObj, "Asia/Taipei", "yyyy/MM/dd");
       }
 
-      // 關鍵規則：補貨日 = 需求日期 + 20 天
-      const replenishmentDate = new Date(reqDateObj.getTime() + (20 * 24 * 60 * 60 * 1000));
-      const arrivalDateStr = Utilities.formatDate(replenishmentDate, "Asia/Taipei", "yyyy/MM/dd");
+      let arrivalDateStr = "";
+      if (item.arrivalDate) {
+        arrivalDateStr = String(item.arrivalDate).trim().substring(0, 10).replace(/-/g, "/");
+      } else {
+        // 關鍵規則：補貨日 = 需求日期 + 20 天
+        const replenishmentDate = new Date(reqDateObj.getTime() + (20 * 24 * 60 * 60 * 1000));
+        arrivalDateStr = Utilities.formatDate(replenishmentDate, "Asia/Taipei", "yyyy/MM/dd");
+      }
 
       validRows.push([
         poNo,
@@ -593,6 +592,9 @@ function api_importProcurementPURI(ordersList) {
 
     poSheet.getRange(currentLastRow + 1, 1, validRows.length, 9).setValues(validRows);
 
+    if (typeof clearExecCache_ === "function") {
+      clearExecCache_("INVENTORY");
+    }
     // 重新運算推移
     generate45DaysProjection();
 
@@ -618,6 +620,13 @@ function api_importProcurementPURI(ordersList) {
   } catch (err) {
     return { success: false, message: "進貨單匯入失敗: " + err.message };
   }
+}
+
+/**
+ * API: 批次建立採購單 (相容自動化測試與外部批次匯入呼叫)
+ */
+function api_batchCreateProcurementOrders(ordersList, operator) {
+  return api_importProcurementPURI(ordersList, operator);
 }
 
 /**
@@ -674,9 +683,6 @@ function api_getProcurementList() {
 
 /**
  * API: 取得業務預約明細清冊 (供編輯與查看)
- */
-/**
- * API: 取得業務預約明細清冊 (供編輯與查看)
  * 規則：
  * 1. 排序為活動日期較前的在最上方 (由近到遠升冪排序)
  * 2. 預約日期已過的不用再顯示在欄位上 (過濾 eventDate < 今日)
@@ -723,6 +729,9 @@ function api_getBookingList(includePast) {
  */
 function api_updateBooking(data, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.SALES, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const res = updateBookingRecord(data);
     if (res && res.success && typeof writeAuditLog === "function") {
       writeAuditLog({
@@ -751,6 +760,9 @@ function api_updateBooking(data, operator) {
  */
 function api_deleteBooking(bookingNo, rowIndex, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.SALES, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const res = deleteBookingRecord(bookingNo, rowIndex);
     if (res && res.success && typeof writeAuditLog === "function") {
       writeAuditLog({
@@ -837,6 +849,9 @@ function api_getAllMaterials() {
  */
 function api_saveMaterial(matData, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const list = saveDynamicMasterMaterial(matData);
     generate45DaysProjection();
 
@@ -872,6 +887,9 @@ function api_saveMaterial(matData, operator) {
  */
 function api_toggleMaterialStatus(itemCode, targetStatus, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const status = (targetStatus === "停用") ? "停用" : "啟用";
     const list = toggleDynamicMasterMaterialStatus(itemCode, status);
     generate45DaysProjection();
@@ -917,6 +935,9 @@ function api_deleteMaterial(itemCode, operator) {
  */
 function api_saveProductAndBOM(productData, bomItems, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const res = saveDynamicProductAndBOM(productData, bomItems);
     // 重新試算 45 天動態推移
     generate45DaysProjection();
@@ -953,6 +974,9 @@ function api_saveProductAndBOM(productData, bomItems, operator) {
  */
 function api_deleteProduct(productId, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const res = deleteDynamicProduct(productId);
     generate45DaysProjection();
 
@@ -986,6 +1010,9 @@ function api_deleteProduct(productId, operator) {
  */
 function api_recordCycleCount(itemCode, actualQty, staffName, note, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const res = recordCycleCount(itemCode, actualQty, staffName, note);
     // 抽盤後自動重新生成推移表
     generate45DaysProjection();
@@ -1015,6 +1042,9 @@ function api_recordCycleCount(itemCode, actualQty, staffName, note, operator) {
  */
 function api_importERPPastedText(text, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     if (!text || !text.trim()) {
       return { success: false, message: "貼上的內容為空" };
     }
@@ -1055,6 +1085,9 @@ function api_importERPPastedText(text, operator) {
  */
 function api_resetSampleERP(operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     const res = importERPRawData(SAMPLE_ERP_RAW_ROWS);
     generate45DaysProjection();
 
@@ -1085,6 +1118,9 @@ function api_resetSampleERP(operator) {
  */
 function api_processGoodsReceipt(receiptData, operator) {
   try {
+    const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.INVENTORY]);
+    if (!auth.authorized) return { success: false, message: auth.message };
+
     if (!receiptData || !receiptData.items || !Array.isArray(receiptData.items) || receiptData.items.length === 0) {
       return { success: false, message: "未包含任何有效驗收品項！" };
     }
@@ -1107,6 +1143,7 @@ function api_processGoodsReceipt(receiptData, operator) {
     let shortCloseCount = 0;
     let shortKeepCount = 0;
     let directCount = 0;
+    let hasExistingModified = false;
 
     const newRowsToAppend = [];
 
@@ -1150,31 +1187,31 @@ function api_processGoodsReceipt(receiptData, operator) {
       }
 
       if (matchedIndex !== -1) {
-        const targetRow = matchedIndex + 2; // 試算表 1-based 列號
+        hasExistingModified = true;
         if (actionType === "FULL") {
-          // 全數到貨：標記為已到貨入庫
-          poSheet.getRange(targetRow, 7).setValue("已到貨入庫");
-          poSheet.getRange(targetRow, 8).setValue(recNo);
-          poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]全數驗收入庫${vendor ? '(' + vendor + ')' : ''}`);
+          // 全數到貨：於記憶體更新該列，稍後一次批次寫回
+          existingPoRows[matchedIndex][6] = "已到貨入庫";
+          existingPoRows[matchedIndex][7] = recNo;
+          existingPoRows[matchedIndex][8] = `進貨單[${recNo}]全數驗收入庫${vendor ? '(' + vendor + ')' : ''}`;
           fullCount++;
         } else if (actionType === "SHORT_CLOSE") {
           // 短交結案 / 實收 0 未到貨結案：實收數量入庫，在途清零
-          poSheet.getRange(targetRow, 6).setValue(recQty); // 更新為實收數（若為 0 則設為 0），避免超額累加
+          existingPoRows[matchedIndex][5] = recQty;
           if (recQty === 0) {
-            poSheet.getRange(targetRow, 7).setValue("已到貨 (實收0，整筆未到貨結案)");
-            poSheet.getRange(targetRow, 8).setValue(recNo);
-            poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]確認全數未到貨(少${shortageQty})，已強制結案清零不再補`);
+            existingPoRows[matchedIndex][6] = "已到貨 (實收0，整筆未到貨結案)";
+            existingPoRows[matchedIndex][7] = recNo;
+            existingPoRows[matchedIndex][8] = `進貨單[${recNo}]確認全數未到貨(少${shortageQty})，已強制結案清零不再補`;
           } else {
-            poSheet.getRange(targetRow, 7).setValue(`已到貨 (短交結案，少${shortageQty})`);
-            poSheet.getRange(targetRow, 8).setValue(recNo);
-            poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]實收${recQty}，原請購${item.originalPoQty || (recQty + shortageQty)}，短交${shortageQty}已強制結案不再補`);
+            existingPoRows[matchedIndex][6] = `已到貨 (短交結案，少${shortageQty})`;
+            existingPoRows[matchedIndex][7] = recNo;
+            existingPoRows[matchedIndex][8] = `進貨單[${recNo}]實收${recQty}，原請購${item.originalPoQty || (recQty + shortageQty)}，短交${shortageQty}已強制結案不再補`;
           }
           shortCloseCount++;
         } else if (actionType === "SHORT_KEEP") {
           // 短交保留在途：原本的採購單改為剩餘在途，另新增一筆已到貨入庫
-          poSheet.getRange(targetRow, 6).setValue(shortageQty); // 剩餘掛在途
-          poSheet.getRange(targetRow, 7).setValue("已請購在途 (部分到貨待補)");
-          poSheet.getRange(targetRow, 9).setValue(`進貨單[${recNo}]已到貨${recQty}，剩餘${shortageQty}待補`);
+          existingPoRows[matchedIndex][5] = shortageQty;
+          existingPoRows[matchedIndex][6] = "已請購在途 (部分到貨待補)";
+          existingPoRows[matchedIndex][8] = `進貨單[${recNo}]已到貨${recQty}，剩餘${shortageQty}待補`;
 
           // 新增已到貨認列
           newRowsToAppend.push([
@@ -1207,11 +1244,18 @@ function api_processGoodsReceipt(receiptData, operator) {
       }
     });
 
+    if (hasExistingModified && existingPoRows.length > 0) {
+      poSheet.getRange(2, 1, existingPoRows.length, 9).setValues(existingPoRows);
+    }
+
     if (newRowsToAppend.length > 0) {
       const curLast = poSheet.getLastRow();
       poSheet.getRange(curLast + 1, 1, newRowsToAppend.length, 9).setValues(newRowsToAppend);
     }
 
+    if (typeof clearExecCache_ === "function") {
+      clearExecCache_("INVENTORY");
+    }
     // 重新滾動 45 天推移與在庫庫存
     generate45DaysProjection();
 

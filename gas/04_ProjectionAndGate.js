@@ -354,18 +354,18 @@ function getAllBookingRecords() {
         if (item.light !== newLight || item.procurementStatus !== newStatus) {
           item.light = newLight;
           item.procurementStatus = newStatus;
+          rows[idx][7] = newLight;
+          rows[idx][8] = newStatus;
           statusUpdates.push({ row: item.rowIndex, light: newLight, status: newStatus });
           needSyncToSheet = true;
         }
       }
     });
 
-    // 若狀態有更新，非同步同步寫回試算表保持資料一致
+    // 若狀態有更新，批次寫回試算表第 8~9 欄保持資料一致 (單次 I/O)
     if (needSyncToSheet && statusUpdates.length > 0) {
-      statusUpdates.forEach(u => {
-        bkSheet.getRange(u.row, 8).setValue(u.light);
-        bkSheet.getRange(u.row, 9).setValue(u.status);
-      });
+      const updatedCols = rows.map(r => [r[7], r[8]]);
+      bkSheet.getRange(2, 8, updatedCols.length, 2).setValues(updatedCols);
 
       if (typeof writeAuditLog === "function") {
         writeAuditLog({
@@ -405,16 +405,15 @@ function updateBookingRecord(data) {
   let targetRowIndex = -1;
   const numRow = Number(data.rowIndex);
   if (numRow >= 2 && numRow <= lastRow) {
-    const checkNo = String(bkSheet.getRange(numRow, 1).getValue()).trim();
+    const checkNo = String(rows[numRow - 2][0] || "").trim();
     if (checkNo === cleanNo || !cleanNo) {
       targetRowIndex = numRow;
     }
   }
 
   if (targetRowIndex === -1) {
-    const rows = bkSheet.getRange(2, 1, lastRow - 1, 1).getValues();
     for (let i = 0; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === cleanNo) {
+      if (String(rows[i][0] || "").trim() === cleanNo) {
         targetRowIndex = i + 2;
         break;
       }
@@ -425,21 +424,16 @@ function updateBookingRecord(data) {
     return { success: false, message: `找不到預約單號 [${cleanNo}]` };
   }
 
-  // 格式化日期
-  const newDate = String(data.eventDate || "").replace(/-/g, "/").trim();
-  const newQty = Number(data.qty) || 0;
-  const newProd = String(data.productName || "").trim();
-  const newGroup = String(data.groupName || "").trim();
-  const newPhone = String(data.phone || "").trim();
-  const newNote = String(data.note || "").trim();
+  // 格式化日期並於記憶體更新該列，單次寫回試算表
+  const rowArr = rows[targetRowIndex - 2];
+  rowArr[1] = String(data.eventDate || "").replace(/-/g, "/").trim();
+  rowArr[2] = String(data.productName || "").trim();
+  rowArr[3] = Number(data.qty) || 0;
+  rowArr[4] = String(data.groupName || "").trim();
+  rowArr[5] = String(data.phone || "").trim();
+  rowArr[9] = String(data.note || "").trim();
 
-  // 更新該行資料
-  bkSheet.getRange(targetRowIndex, 2).setValue(newDate);
-  bkSheet.getRange(targetRowIndex, 3).setValue(newProd);
-  bkSheet.getRange(targetRowIndex, 4).setValue(newQty);
-  bkSheet.getRange(targetRowIndex, 5).setValue(newGroup);
-  bkSheet.getRange(targetRowIndex, 6).setValue(newPhone);
-  bkSheet.getRange(targetRowIndex, 10).setValue(newNote);
+  bkSheet.getRange(targetRowIndex, 1, 1, 10).setValues([rowArr]);
 
   // 重新試算 45 天動態推移
   generate45DaysProjection();
@@ -465,19 +459,19 @@ function deleteBookingRecord(bookingNo, rowIndex) {
   const lastRow = bkSheet.getLastRow();
   if (lastRow <= 1) return { success: false, message: "查無預約紀錄" };
 
+  const rows = bkSheet.getRange(2, 1, lastRow - 1, 1).getValues();
   let rowToDelete = -1;
   const numRow = Number(rowIndex);
   if (numRow >= 2 && numRow <= lastRow) {
-    const checkNo = String(bkSheet.getRange(numRow, 1).getValue()).trim();
+    const checkNo = String(rows[numRow - 2][0] || "").trim();
     if (checkNo === cleanNo || !cleanNo) {
       rowToDelete = numRow;
     }
   }
 
   if (rowToDelete === -1 && cleanNo) {
-    const rows = bkSheet.getRange(2, 1, lastRow - 1, 1).getValues();
     for (let i = 0; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === cleanNo) {
+      if (String(rows[i][0] || "").trim() === cleanNo) {
         rowToDelete = i + 2;
         break;
       }
@@ -507,6 +501,7 @@ function generate45DaysProjection() {
   const capacities = calculateProductCapacities();
   const now = new Date();
   const nowStr = Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
+  const todayStr = Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd");
   
   // 動態取得所有商品 ID（依 ID 數值遞增排序，確保欄位穩定）
   const productIds = Object.keys(capacities).sort((a, b) => {
@@ -514,6 +509,27 @@ function generate45DaysProjection() {
     const numB = isNaN(Number(b)) ? 9999 : Number(b);
     return numA - numB;
   });
+
+  // 讀取未來有效預約紀錄，以便在 45 天推移中準確反映已預約佔用量
+  const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
+  const bkLastRow = bkSheet ? bkSheet.getLastRow() : 0;
+  const activeBookings = [];
+  if (bkLastRow > 1) {
+    const bkRows = bkSheet.getRange(2, 1, bkLastRow - 1, 4).getValues();
+    bkRows.forEach(r => {
+      let rDateStr = "";
+      if (r[1] instanceof Date) {
+        rDateStr = Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd");
+      } else {
+        rDateStr = String(r[1] || "").substring(0, 10).replace(/-/g, "/");
+      }
+      const rProdName = String(r[2] || "").trim();
+      const rQty = Number(r[3]) || 0;
+      if (rDateStr >= todayStr && rQty > 0) {
+        activeBookings.push({ dateStr: rDateStr, prodName: rProdName, qty: rQty });
+      }
+    });
+  }
 
   const daysList = [];
   const weekDayNames = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
@@ -526,10 +542,20 @@ function generate45DaysProjection() {
     const safety = getSafetyFloor(targetDate);
     const typeStr = isWk ? `假日 (保底${safety})` : `平日 (保底${safety})`;
 
-    // 動態計算各商品扣除散客保底後的可用量
+    // 動態計算各商品扣除散客保底與累計已預約數後的可用量
     const availList = productIds.map(pId => {
       const cap = capacities[pId];
-      return Math.max(0, (cap ? cap.maxCapacity : 0) - safety);
+      const baseCap = cap ? cap.maxCapacity : 0;
+      const pName = cap ? cap.productName : "";
+      let bookedSum = 0;
+      if (pName) {
+        activeBookings.forEach(bk => {
+          if (bk.dateStr <= dateStr && (bk.prodName === pName || bk.prodName.includes(pName) || pName.includes(bk.prodName))) {
+            bookedSum += bk.qty;
+          }
+        });
+      }
+      return Math.max(0, baseCap - safety - bookedSum);
     });
 
     daysList.push([dateStr, dayOfWeek, typeStr, ...availList, nowStr]);
@@ -543,18 +569,14 @@ function generate45DaysProjection() {
   });
   const header = [...headerBase, ...headerProducts, "更新時間"];
   
-  // 清除並重寫（包含表頭）
+  // 批次覆寫（包含表頭與資料列）
   const totalCols = header.length;
   const maxRows = projSheet.getLastRow();
-  if (maxRows > 0) {
-    projSheet.getRange(1, 1, maxRows, projSheet.getMaxColumns()).clearContent();
+  if (maxRows > daysList.length + 1) {
+    projSheet.getRange(daysList.length + 2, 1, maxRows - (daysList.length + 1), projSheet.getMaxColumns()).clearContent();
   }
-  projSheet.getRange(1, 1, 1, totalCols).setValues([header]);
-  
-  if (daysList.length > 0) {
-    projSheet.getRange(2, 1, daysList.length, daysList[0].length).setValues(daysList);
-  }
-  projSheet.autoResizeColumns(1, totalCols);
+  const allOut = [header, ...daysList];
+  projSheet.getRange(1, 1, allOut.length, totalCols).setValues(allOut);
 
   if (typeof writeAuditLog === "function") {
     writeAuditLog({

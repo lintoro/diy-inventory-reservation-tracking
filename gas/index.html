@@ -636,7 +636,7 @@
 
       <div class="form-group">
         <label class="form-label">ERP 物料品號 (貨號) <span style="color:red;">*</span></label>
-        <input type="text" id="mat-input-code" class="form-input" placeholder="例如：5D2000008 或 自訂品號">
+        <input type="text" id="mat-input-code" class="form-input" placeholder="例如：MAT-ART-009 或 自訂品號">
       </div>
       <div class="form-group">
         <label class="form-label">物料完整品名 <span style="color:red;">*</span></label>
@@ -900,7 +900,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">公司工號</label>
-              <input type="text" id="admin-new-empno" class="form-input" placeholder="例如：B111088">
+              <input type="text" id="admin-new-empno" class="form-input" placeholder="例如：EMP00088">
             </div>
             <div class="form-group">
               <label class="form-label">姓名</label>
@@ -1820,7 +1820,6 @@
         btnManager.style.display = "inline-block";
         if (btnBom) btnBom.style.display = "inline-block";
         switchTab("tab-admin");
-        loadUsersList();
       } else if (currentUser.role === "SALES") {
         btnAdmin.style.display = "none";
         if (btnAudit) btnAudit.style.display = "none";
@@ -1965,9 +1964,12 @@
           // 3. 渲染物料下拉選單 (抽盤 ＋ 採購)
           renderMaterialSelect(res.materials);
 
-          // 4. 渲染未來 30 天預約清單與載入最新預約清冊
-          renderRecentBookings(res.recentBookings);
-          loadBookingList();
+          // 4. 直接使用整合回傳的有效預約清單渲染，免除第二次 api_getBookingList RPC 呼叫与重複渲染
+          if (Array.isArray(res.activeBookings)) {
+            renderBookingList(res.activeBookings);
+          } else {
+            loadBookingList();
+          }
 
           // 5. 渲染在途採購清單
           renderPendingPOs(res.pendingPOs);
@@ -3166,7 +3168,7 @@
           showLoading(false);
           alert("進貨驗收核銷失敗: " + err);
         })
-        .api_processGoodsReceipt(currentReceiptCompareData);
+        .api_processGoodsReceipt(currentReceiptCompareData, currentUser);
     }
 
     // ==================== 📋 預約登記清冊與修改刪除管理 JS ====================
@@ -3270,32 +3272,33 @@
       }
 
       tbody.innerHTML = bookings.map(b => {
-        let lightTag = `<span class="status-badge ${b.light}">${b.light === "YELLOW" ? "🟡需叫貨補料" : (b.light === "RED" ? "🔴額滿禁接" : "🟢庫存充足")}</span>`;
+        let lightTag = `<span class="status-badge ${escapeHtml(b.light)}">${b.light === "YELLOW" ? "🟡需叫貨補料" : (b.light === "RED" ? "🔴額滿禁接" : "🟢庫存充足")}</span>`;
         let statusColor = (b.light === "GREEN") ? "#64748b" : "#b45309";
-        let statusText = b.procurementStatus ? `<div style="font-size:11px; color:${statusColor}; font-weight:600; margin-top:3px;">${b.procurementStatus}</div>` : '';
+        let statusText = b.procurementStatus ? `<div style="font-size:11px; color:${statusColor}; font-weight:600; margin-top:3px;">${escapeHtml(b.procurementStatus)}</div>` : '';
+        const safeNo = escapeHtml(b.bookingNo);
 
         return `
           <tr>
             <td>
-              <span class="booking-code-tag">${b.bookingNo}</span>
-              ${b.createdAt ? `<div style="font-size:11px; color:#94a3b8; margin-top:3px;">登記:${b.createdAt.substring(5, 16)}</div>` : ''}
+              <span class="booking-code-tag">${safeNo}</span>
+              ${b.createdAt ? `<div style="font-size:11px; color:#94a3b8; margin-top:3px;">登記:${escapeHtml(b.createdAt.substring(5, 16))}</div>` : ''}
             </td>
             <td>
               <div style="font-weight:700; color:#1e293b; font-size:13px; white-space:nowrap;">
-                ${b.eventDate} ${getBookingWeekdayTag(b.eventDate)}
+                ${escapeHtml(b.eventDate)} ${getBookingWeekdayTag(b.eventDate)}
               </div>
             </td>
             <td>
-              <span class="product-tag">${b.productName}</span>
+              <span class="product-tag">${escapeHtml(b.productName)}</span>
             </td>
             <td style="text-align:center;">
-              <span style="font-size:16px; font-weight:800; color:var(--primary);">${b.qty}</span>
+              <span style="font-size:16px; font-weight:800; color:var(--primary);">${Number(b.qty) || 0}</span>
               <span style="font-size:12px; color:#64748b;"> 套</span>
             </td>
             <td>
-              <div style="font-weight:700; color:#1e293b; font-size:13px;">${b.groupName || "一般團體或現場預約"}</div>
-              ${b.phone ? `<div style="font-size:12px; color:#64748b; margin-top:2px;">📞 ${b.phone}</div>` : ''}
-              ${b.note ? `<div style="font-size:11px; color:#94a3b8; margin-top:2px; font-style:italic;">📝 ${b.note}</div>` : ''}
+              <div style="font-weight:700; color:#1e293b; font-size:13px;">${escapeHtml(b.groupName || "一般團體或現場預約")}</div>
+              ${b.phone ? `<div style="font-size:12px; color:#64748b; margin-top:2px;">📞 ${escapeHtml(b.phone)}</div>` : ''}
+              ${b.note ? `<div style="font-size:11px; color:#94a3b8; margin-top:2px; font-style:italic;">📝 ${escapeHtml(b.note)}</div>` : ''}
             </td>
             <td>
               ${lightTag}
@@ -3303,10 +3306,10 @@
             </td>
             <td style="text-align:center; white-space:nowrap;">
               <div style="display:inline-flex; gap:6px;">
-                <button class="btn-action-edit" onclick="openBookingEditModal('${b.bookingNo}', ${b.rowIndex})" title="修改預約內容">
+                <button class="btn-action-edit" onclick="openBookingEditModal('${safeNo}', ${Number(b.rowIndex) || 0})" title="修改預約內容">
                   ✏️ 編輯
                 </button>
-                <button class="btn-action-delete" onclick="deleteBookingItem('${b.bookingNo}', ${b.rowIndex})" title="取消此筆預約">
+                <button class="btn-action-delete" onclick="deleteBookingItem('${safeNo}', ${Number(b.rowIndex) || 0})" title="取消此筆預約">
                   🗑️ 取消
                 </button>
               </div>
@@ -3332,12 +3335,12 @@
         } else {
           shortageTbody.innerHTML = shortages.map(b => `
             <tr>
-              <td><strong>${b.bookingNo}</strong></td>
-              <td><b>${b.eventDate}</b></td>
-              <td>${b.productName}</td>
-              <td style="text-align:center; font-weight:700;">${b.qty} 套</td>
-              <td>${b.groupName} (${b.phone || "-"})</td>
-              <td><span style="color:#b91c1c; font-weight:700;">${b.procurementStatus || "尚缺物料"}</span></td>
+              <td><strong>${escapeHtml(b.bookingNo)}</strong></td>
+              <td><b>${escapeHtml(b.eventDate)}</b></td>
+              <td>${escapeHtml(b.productName)}</td>
+              <td style="text-align:center; font-weight:700;">${Number(b.qty) || 0} 套</td>
+              <td>${escapeHtml(b.groupName)} (${escapeHtml(b.phone || "-")})</td>
+              <td><span style="color:#b91c1c; font-weight:700;">${escapeHtml(b.procurementStatus || "尚缺物料")}</span></td>
               <td><span style="color:#d97706; font-weight:600;">請安排採購叫貨</span></td>
             </tr>
           `).join("");
@@ -3345,7 +3348,6 @@
       }
     }
 
-    // 開啟預約編輯彈窗
     // 開啟預約編輯彈窗 (支援 rowIndex 優先定位)
     function openBookingEditModal(bookingNo, rowIndex) {
       const item = (rowIndex && cachedBookingList)
@@ -3374,7 +3376,7 @@
         select.innerHTML = '<option value="">⚠ 無商品資料，請先返回重新整理</option>';
       } else {
         select.innerHTML = products.map(p => `
-          <option value="${p.name}" ${String(item.productName || '').includes(p.name) ? 'selected' : ''}>${p.name}</option>
+          <option value="${escapeHtml(p.name)}" ${String(item.productName || '').includes(p.name) ? 'selected' : ''}>${escapeHtml(p.name)}</option>
         `).join("");
       }
 
@@ -3408,9 +3410,7 @@
           alert(res.message);
           if (res.success) {
             closeBookingEditModal();
-            loadBookingList();
             loadDashboard();
-            handleBookingDateChanged();
           }
         })
         .withFailureHandler(function(err) {
@@ -3439,9 +3439,7 @@
           showLoading(false);
           alert(res.message);
           if (res.success) {
-            loadBookingList();
             loadDashboard();
-            handleBookingDateChanged();
           }
         })
         .withFailureHandler(function(err) {
@@ -4118,7 +4116,6 @@
           if (noInput) noInput.value = "";
           initDefaultBookingNo(true); // 強制產生下一組全新單號，避免重複
           loadDashboard();
-          loadBookingList();
         })
         .withFailureHandler(function(err) {
           showLoading(false);

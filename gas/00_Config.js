@@ -50,7 +50,7 @@ const CONFIG = {
     empNo: "ADM00001",
     name: "系統管理員",
     role: "ADMIN",
-    defaultPassword: "password123"
+    defaultPassword: "000000"
   },
 
   // 散客保底底線 (Hard Safety Floor)
@@ -161,13 +161,65 @@ const CONFIG = {
   ]
 };
 
-// 輔助函式：取得試算表實例
+/**
+ * 單次請求執行期記憶體快取 (Request-Scoped Execution Cache)
+ * 避免單一 API 執行期間重複讀取相同工作表與重複運算
+ */
+const _EXEC_CACHE = {
+  ss: null,
+  safetyFloor: null,
+  dynamicBOM: null,
+  materialsActive: null,
+  materialsAll: null,
+  erpCleanResult: null,
+  effectiveInventory: null,
+  productCapacities: null
+};
+
+/**
+ * 清除執行期記憶體快取 (於寫入底表後呼叫)
+ * @param {string} [scope="ALL"] 快取範圍 ("ALL", "INVENTORY", "BOM", "MATERIAL", "SAFETY")
+ */
+function clearExecCache_(scope) {
+  if (!scope || scope === "ALL") {
+    _EXEC_CACHE.safetyFloor = null;
+    _EXEC_CACHE.dynamicBOM = null;
+    _EXEC_CACHE.materialsActive = null;
+    _EXEC_CACHE.materialsAll = null;
+    _EXEC_CACHE.erpCleanResult = null;
+    _EXEC_CACHE.effectiveInventory = null;
+    _EXEC_CACHE.productCapacities = null;
+    return;
+  }
+  if (scope === "SAFETY") {
+    _EXEC_CACHE.safetyFloor = null;
+  } else if (scope === "BOM") {
+    _EXEC_CACHE.dynamicBOM = null;
+    _EXEC_CACHE.productCapacities = null;
+  } else if (scope === "MATERIAL") {
+    _EXEC_CACHE.materialsActive = null;
+    _EXEC_CACHE.materialsAll = null;
+    _EXEC_CACHE.effectiveInventory = null;
+    _EXEC_CACHE.productCapacities = null;
+  } else if (scope === "INVENTORY") {
+    _EXEC_CACHE.erpCleanResult = null;
+    _EXEC_CACHE.effectiveInventory = null;
+    _EXEC_CACHE.productCapacities = null;
+  }
+}
+
+// 輔助函式：取得試算表實例 (含執行期快取)
 // - 容器綁定專案 (Container-bound)：優先使用 getActiveSpreadsheet()
 // - Web App 獨立執行環境：從 ScriptProperties 取得 SPREADSHEET_ID
 function getSpreadsheet() {
+  if (_EXEC_CACHE.ss) return _EXEC_CACHE.ss;
+
   try {
     const active = SpreadsheetApp.getActiveSpreadsheet();
-    if (active) return active;
+    if (active) {
+      _EXEC_CACHE.ss = active;
+      return active;
+    }
   } catch (e) {}
 
   let sid = CONFIG.SPREADSHEET_ID;
@@ -179,7 +231,8 @@ function getSpreadsheet() {
   if (!sid) {
     throw new Error("未設定試算表 ID！請於 Google Apps Script 之【專案設定 > 指令碼屬性】設定 SPREADSHEET_ID，或自試算表選單開啟。");
   }
-  return SpreadsheetApp.openById(sid);
+  _EXEC_CACHE.ss = SpreadsheetApp.openById(sid);
+  return _EXEC_CACHE.ss;
 }
 
 /**
@@ -187,6 +240,7 @@ function getSpreadsheet() {
  * 優先採用 ScriptProperties，若無則採用 CONFIG.SAFETY_FLOOR (10/20)
  */
 function getSafetyFloorConfig() {
+  if (_EXEC_CACHE.safetyFloor) return _EXEC_CACHE.safetyFloor;
   try {
     const props = PropertiesService.getScriptProperties();
     const weekday = Number(props.getProperty("SAFETY_FLOOR_WEEKDAY")) || CONFIG.SAFETY_FLOOR.WEEKDAY;
@@ -198,11 +252,12 @@ function getSafetyFloorConfig() {
         specialDates = JSON.parse(specialJson);
       } catch (e) {}
     }
-    return {
+    _EXEC_CACHE.safetyFloor = {
       weekday: weekday,
       weekend: weekend,
       specialDates: specialDates
     };
+    return _EXEC_CACHE.safetyFloor;
   } catch (err) {
     return {
       weekday: CONFIG.SAFETY_FLOOR.WEEKDAY,
@@ -226,6 +281,7 @@ function setSafetyFloorConfig(weekday, weekend, specialDates) {
   if (specialDates && typeof specialDates === "object") {
     props.setProperty("SAFETY_FLOOR_SPECIAL_JSON", JSON.stringify(specialDates));
   }
+  clearExecCache_("SAFETY");
   return getSafetyFloorConfig();
 }
 
@@ -234,6 +290,7 @@ function setSafetyFloorConfig(weekday, weekend, specialDates) {
  * @returns {Object} { products: Array, bomRules: Array }
  */
 function getDynamicProductsAndBOM() {
+  if (_EXEC_CACHE.dynamicBOM) return _EXEC_CACHE.dynamicBOM;
   try {
     const ss = getSpreadsheet();
     const sheet = ss.getSheetByName(CONFIG.SHEETS.BOM_RULES);
@@ -260,13 +317,12 @@ function getDynamicProductsAndBOM() {
       if (!pId || !pName || !cat) return;
 
       if (!productsMap[pId]) {
-        // 從預設 PRODUCTS 尋找對應描述，或使用預設
         const defaultProd = CONFIG.PRODUCTS.find(p => p.id === pId);
         productsMap[pId] = {
           id: pId,
           name: pName,
           desc: defaultProd ? defaultProd.desc : `${pName} DIY體驗材料包`,
-          isBuiltin: !!defaultProd  // 在 CONFIG.PRODUCTS 中有定義者為內建商品
+          isBuiltin: !!defaultProd
         };
       }
 
@@ -284,7 +340,8 @@ function getDynamicProductsAndBOM() {
       return { products: CONFIG.PRODUCTS, bomRules: CONFIG.BOM_RULES };
     }
 
-    return { products: products, bomRules: bomRules };
+    _EXEC_CACHE.dynamicBOM = { products: products, bomRules: bomRules };
+    return _EXEC_CACHE.dynamicBOM;
   } catch (err) {
     return { products: CONFIG.PRODUCTS, bomRules: CONFIG.BOM_RULES };
   }
@@ -317,11 +374,9 @@ function saveDynamicProductAndBOM(product, bomItems) {
   let remainingRows = [];
   if (lastRow > 1) {
     const existing = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
-    // 過濾掉該商品原本的舊配方
     remainingRows = existing.filter(r => String(r[0] || "").trim() !== pId);
   }
 
-  // 新的配方列
   const newRows = bomItems.map(item => [
     pId,
     pName,
@@ -332,13 +387,15 @@ function saveDynamicProductAndBOM(product, bomItems) {
 
   const allRows = remainingRows.concat(newRows);
 
-  // 清空重新寫入
-  sheet.clearContents();
-  sheet.appendRow(["產品代碼", "體驗方案名稱", "所需材料種類代碼", "單份用量", "備註說明"]);
+  // 清空資料列（保留表頭格式）並批次寫入
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, 5).clearContent();
+  }
   if (allRows.length > 0) {
     sheet.getRange(2, 1, allRows.length, 5).setValues(allRows);
   }
 
+  clearExecCache_("BOM");
   return getDynamicProductsAndBOM();
 }
 
@@ -360,12 +417,12 @@ function deleteDynamicProduct(productId) {
   const existing = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
   const remaining = existing.filter(r => String(r[0] || "").trim() !== pId);
 
-  sheet.clearContents();
-  sheet.appendRow(["產品代碼", "體驗方案名稱", "所需材料種類代碼", "單份用量", "備註說明"]);
+  sheet.getRange(2, 1, lastRow - 1, 5).clearContent();
   if (remaining.length > 0) {
     sheet.getRange(2, 1, remaining.length, 5).setValues(remaining);
   }
 
+  clearExecCache_("BOM");
   return getDynamicProductsAndBOM();
 }
 
@@ -375,6 +432,9 @@ function deleteDynamicProduct(productId) {
  * @returns {Array<Object>} 材料主檔清單
  */
 function getDynamicMasterMaterials(includeInactive = false) {
+  if (includeInactive && _EXEC_CACHE.materialsAll) return _EXEC_CACHE.materialsAll;
+  if (!includeInactive && _EXEC_CACHE.materialsActive) return _EXEC_CACHE.materialsActive;
+
   try {
     const ss = getSpreadsheet();
     const sheet = ss.getSheetByName(CONFIG.SHEETS.MATERIAL_MASTER);
@@ -384,7 +444,8 @@ function getDynamicMasterMaterials(includeInactive = false) {
     if (lastRow <= 1) return CONFIG.MASTER_MATERIALS;
 
     const rows = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
-    const list = [];
+    const listAll = [];
+    const listActive = [];
     rows.forEach(r => {
       const code = String(r[0] || "").trim();
       const name = String(r[1] || "").trim();
@@ -394,22 +455,22 @@ function getDynamicMasterMaterials(includeInactive = false) {
       const status = String(r[5] || "啟用").trim();
 
       if (code) {
-        if (includeInactive || status !== "停用") {
-          list.push({
-            itemCode: code,
-            itemName: name,
-            category: cat,
-            color: color,
-            note: note,
-            status: status
-          });
+        const item = {
+          itemCode: code,
+          itemName: name,
+          category: cat,
+          color: color,
+          note: note,
+          status: status
+        };
+        listAll.push(item);
+        if (status !== "停用") {
+          listActive.push(item);
         }
       }
     });
 
-    const resultList = list.length > 0 ? list : CONFIG.MASTER_MATERIALS;
-    // 依三階層排序：#材料種類代碼 ##ERP品號 ###品名規格
-    resultList.sort((a, b) => {
+    const sortFn = (a, b) => {
       const catCmp = String(a.category || "").localeCompare(String(b.category || ""), "zh-Hant");
       if (catCmp !== 0) return catCmp;
       const codeCmp = String(a.itemCode || "").localeCompare(String(b.itemCode || ""));
@@ -417,9 +478,15 @@ function getDynamicMasterMaterials(includeInactive = false) {
       const nameA = `${a.itemName || ""} ${a.color || ""}`;
       const nameB = `${b.itemName || ""} ${b.color || ""}`;
       return nameA.localeCompare(nameB, "zh-Hant");
-    });
+    };
 
-    return resultList;
+    const resAll = listAll.length > 0 ? listAll.sort(sortFn) : CONFIG.MASTER_MATERIALS;
+    const resActive = listActive.length > 0 ? listActive.sort(sortFn) : CONFIG.MASTER_MATERIALS;
+
+    _EXEC_CACHE.materialsAll = resAll;
+    _EXEC_CACHE.materialsActive = resActive;
+
+    return includeInactive ? resAll : resActive;
   } catch (e) {
     return CONFIG.MASTER_MATERIALS;
   }
@@ -453,7 +520,6 @@ function saveDynamicMasterMaterial(matData) {
     const existing = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
     for (let i = 0; i < existing.length; i++) {
       if (String(existing[i][0]).trim() === code) {
-        // 更新現有資料
         sheet.getRange(i + 2, 1, 1, 6).setValues([[code, name, cat, color, note, "啟用"]]);
         found = true;
         break;
@@ -465,6 +531,7 @@ function saveDynamicMasterMaterial(matData) {
     sheet.appendRow([code, name, cat, color, note, "啟用"]);
   }
 
+  clearExecCache_("MATERIAL");
   return getDynamicMasterMaterials(true);
 }
 
@@ -485,7 +552,7 @@ function toggleDynamicMasterMaterialStatus(itemCode, targetStatus) {
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) throw new Error("材料主檔底表無資料");
 
-  const existing = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+  const existing = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
   let found = false;
   for (let i = 0; i < existing.length; i++) {
     if (String(existing[i][0]).trim() === code) {
@@ -497,6 +564,7 @@ function toggleDynamicMasterMaterialStatus(itemCode, targetStatus) {
 
   if (!found) throw new Error(`找不到材料品號 [${code}]`);
 
+  clearExecCache_("MATERIAL");
   return getDynamicMasterMaterials(true);
 }
 
