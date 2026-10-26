@@ -545,3 +545,19 @@
   - 於 `gas/05_API.js` 的 `api_getProjectionByDate` 補回 `today`、`targetMid`、`daysDiff`、`isOver45Days` 以及 `const dayCaps = {};` 變數定義。
   - 重新推送到 GAS 雲端並發布正式版本 Version @38。
 - **狀態**：🟢 已修復並部署至 Version @38 (2026-10-26)
+
+---
+
+### ISSUE-040：BOM 卡片與維護清單誤顯生硬料號代碼而非中文材料品名
+- **問題描述**：
+  - 在「🎨 商品與 BOM 配方維護中心」中，「ID: 6 請多紙膠」等商品的單份耗用材料組成卡片上，直接顯示 `411TBXX037-WT1001 × 1 (潘朵拉盒 (共用總量))`、`5D3000002 × 0.1 (紙膠帶)` 等生硬的貨號代碼，而非易讀易懂的中文材料名稱（如 `手提多格收納盒/雪映白`、`創意紙膠帶 (7mm/細款)`）。
+- **根因分析**：
+  - 前端 `renderBOMProducts` 渲染標籤時，直接使用了 `<b>${r.category}</b>`。
+  - 對於折疊籃等商品，其 `category` 填入的是分類中文代碼（如「旁敲側擊A」），因此卡片能直接顯示名稱；但「請多紙膠」或特定自訂商品之配方若直接以具體品號為 category（如 `411TBXX037-WT1001`），前端未進行品號反查中文名稱，導致貨號赤裸裸呈現。
+  - 後端 `getDynamicProductsAndBOM()` 未主動結合材料主檔補齊 `materialName`，且編輯彈窗下拉選單在遇到歷史舊號時未相容保留，易引發配方列遺失。
+- **解決方案**：
+  - 後端：於 `gas/00_Config.js` 實作 `resolveMaterialDisplayName(codeOrCat)`，自動結合 `02_材料品號對照表` 與去敏標準字典，為所有 `bomRules` 注入明確之 `materialName`。
+  - 後端：於 `gas/05_API.js` 的 `api_getAllProductsAndBOM` 擴充有效性驗證，確保具備品名或歷史相容之配方不被意外過濾。
+  - 前端：於 `gas/js_client.html` 實作 `getMaterialDisplayName(ruleOrCat)`，卡片優先顯示易讀之中文品名（如 `手提多格收納盒/雪映白`、`創意紙膠帶 (7mm/細款)`），徹底去除生硬貨號。
+  - 前端：優化編輯彈窗 `addBOMItemRow`，下拉選單以中文品名置頂（如 `手提多格收納盒/雪映白 [MAT-PAN-002]`），並對歷史舊品號提供自動防呆補入，確保編輯配方零遺失。
+- **狀態**：🟢 已修復並部署至 Version @39 (2026-10-26)

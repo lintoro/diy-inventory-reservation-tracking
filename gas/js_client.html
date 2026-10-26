@@ -1800,6 +1800,40 @@
         .api_getAllProductsAndBOM();
     }
 
+    /**
+     * 取得 BOM 部件的中文友好材料名稱 (優先顯示品名而非貨號)
+     */
+    function getMaterialDisplayName(ruleOrCat) {
+      if (!ruleOrCat) return "";
+      const cat = typeof ruleOrCat === "object" ? String(ruleOrCat.category || "").trim() : String(ruleOrCat || "").trim();
+      if (typeof ruleOrCat === "object" && ruleOrCat.materialName) {
+        return ruleOrCat.materialName;
+      }
+
+      // 1. 查找 cachedBOMData.masterMaterials
+      if (window.cachedBOMData && Array.isArray(window.cachedBOMData.masterMaterials)) {
+        const mat = window.cachedBOMData.masterMaterials.find(m => String(m.itemCode).trim() === cat);
+        if (mat && mat.itemName) {
+          return mat.color ? `${mat.itemName}/${mat.color}` : mat.itemName;
+        }
+      }
+
+      // 2. 舊號與預設映射字典
+      const LEGACY_MAP = {
+        "411TBXX037-WT1001": "手提多格收納盒/雪映白",
+        "411TBXX037-BK1001": "手提多格收納盒/曜石黑",
+        "5D3000002": "創意紙膠帶 (7mm/細款)",
+        "MAT-PAN-001": "手提多格收納盒/曜石黑",
+        "MAT-PAN-002": "手提多格收納盒/雪映白",
+        "MAT-WASHI-001": "創意紙膠帶 (7mm/細款)",
+        "請多紙膠A": "手提多格收納盒 (共用總量)",
+        "請多紙膠B": "創意紙膠帶"
+      };
+      if (LEGACY_MAP[cat]) return LEGACY_MAP[cat];
+
+      return cat;
+    }
+
     function renderBOMProducts(products, bomRules) {
       const container = document.getElementById("bom-products-container");
       if (!products || products.length === 0) {
@@ -1816,11 +1850,14 @@
       container.innerHTML = products.map(p => {
         const rules = ruleMap[p.id] || [];
         const isBuiltin = !!p.isBuiltin;  // 由後端 getDynamicProductsAndBOM 動態標記，不寫死 ID 範圍
-        const rulesBadges = rules.map(r => `
+        const rulesBadges = rules.map(r => {
+          const displayName = getMaterialDisplayName(r);
+          return `
           <span style="display:inline-block; background:#f1f5f9; border:1px solid #cbd5e1; padding:3px 8px; border-radius:6px; font-size:12px; margin:2px 4px 2px 0;">
-            <b>${r.category}</b> × ${r.qty} <span style="color:#64748b;">(${formatSharedLabel(r.note || '')})</span>
+            <b>${escapeHtml(displayName)}</b> × ${r.qty} <span style="color:#64748b;">(${formatSharedLabel(r.note || '')})</span>
           </span>
-        `).join("");
+        `;
+        }).join("");
 
         const deleteBtn = isBuiltin ? '' : `
           <button class="btn btn-danger btn-sm" onclick="handleDeleteProduct('${p.id}', '${p.name}')">
@@ -1885,7 +1922,7 @@
       // 僅載入有效啟用中材料之配方 (已停用料在 BOM 表內不見)
       const validRules = rules.filter(r => {
         const cat = String(r.category || "").trim();
-        return activeCats.has(cat) || activeCodes.has(cat);
+        return activeCats.has(cat) || activeCodes.has(cat) || !!r.materialName || !!getMaterialDisplayName(cat);
       });
 
       const tbody = document.getElementById("bom-items-tbody");
@@ -1937,7 +1974,7 @@
         masterMaterials.forEach(m => {
           // 選取值直接以唯一 ERP 品號為值，徹底解決同分類選項 value 重複導致儲存後全部跳掉的 Bug (問題 4)
           const val = m.itemCode;
-          const label = `${m.itemCode} - ${m.itemName} (${m.category})`;
+          const label = `${m.itemName} [${m.itemCode}]${m.color ? ' (' + m.color + ')' : ''}`;
           const isSel = (selectedCategory === m.itemCode || selectedCategory === m.category);
           if (isSel) matchedAny = true;
           optionsHtml += `<option value="${val}" ${isSel ? 'selected' : ''}>${label}</option>`;
@@ -1945,9 +1982,13 @@
         optionsHtml += '</optgroup>';
       }
 
-      // 若指定了 selectedCategory 但不在目前啟用清單中 (例如已被停用)，不應添加或胡亂跳選首項
+      // 若指定了 selectedCategory 但不在目前啟用清單中 (例如歷史舊料號)，補充保留選項，避免配方列消失
       if (selectedCategory && !matchedAny) {
-        return;
+        const fallbackName = getMaterialDisplayName(selectedCategory);
+        optionsHtml += `<optgroup label="📌 現有配方品項">
+          <option value="${selectedCategory}" selected>${fallbackName} [${selectedCategory}]</option>
+        </optgroup>`;
+        matchedAny = true;
       }
 
       const tr = document.createElement("tr");

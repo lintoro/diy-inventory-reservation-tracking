@@ -287,3 +287,16 @@
     - 於 `gas/00_Config.js` 新增 `getHeaderIndexMap_(sheet)`，防止非工程師同仁手動在 Google Sheets 插入或更動欄位造成系統索引錯位崩潰。
   - **完成 Phase 26 單元測試套件與選單掛載**：
     - 撰寫 `test_Phase26_EgmOptimizations()` 並加入試算表選單第 14 項。
+
+- [x] 修復指定日期推移速查未宣告 dayCaps 拋錯 (ISSUE-039)：
+  - 於 `gas/05_API.js` 的 `api_getProjectionByDate` 補齊 `const dayCaps = {};` 及相關日期差異變數宣告，部署至 Version **`@38`**。
+
+- [x] 完成 Phase 27（BOM 配方卡片與維護清單中文品名去敏顯示優化，ISSUE-040）：
+  - **後端材料品名動態反查與注入**：
+    - 於 `gas/00_Config.js` 實作 `resolveMaterialDisplayName(codeOrCat)`，整合材料主檔與標準去敏字典，為 BOM 配方規則自動注入 `materialName`。
+    - 於 `CONFIG.MASTER_MATERIALS` 補齊 `MAT-WASHI-001`（創意紙膠帶 7mm/細款）。
+    - 於 `gas/05_API.js` 的 `api_getAllProductsAndBOM` 增強過濾相容性，保留具備品名與舊代碼之配方。
+  - **前端 BOM 卡片易讀中文品名展示**：
+    - 於 `gas/js_client.html` 實作 `getMaterialDisplayName(ruleOrCat)`，卡片優先顯示中文材料名稱（例如：手提多格收納盒/雪映白、創意紙膠帶 (7mm/細款)），徹底去除生硬貨號。
+    - 編輯彈窗下拉選單優化為中文品名置頂，並對歷史舊品號提供自動防呆補入，防止配方行遺失。
+  - **固定部署更新**：以固定 Deployment ID 更新部署至 Version **`@39`**。

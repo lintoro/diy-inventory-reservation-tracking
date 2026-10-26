@@ -116,6 +116,7 @@ const CONFIG = {
     // 巧手紙膠 - 手提多格收納盒 (2色)
     { itemCode: "MAT-PAN-001", itemName: "手提多格收納盒/曜石黑", category: "請多紙膠A", color: "黑" },
     { itemCode: "MAT-PAN-002", itemName: "手提多格收納盒/雪映白", category: "請多紙膠A", color: "白" },
+    { itemCode: "MAT-WASHI-001", itemName: "創意紙膠帶 (7mm/細款)", category: "請多紙膠B", color: "混款" },
 
     // 繪聲繪影 - 共用料 (框圖、顏料)
     { itemCode: "MAT-ART-001", itemName: "DIY彩繪框圖卡紙/精裝款", category: "繪聲繪影A", color: "共用" },
@@ -289,18 +290,64 @@ function setSafetyFloorConfig(weekday, weekend, specialDates) {
  * 取得當前所有 DIY 商品與其 BOM 配方 (由 03_BOM配方設定表 底表驅動，若底表為空則回退至預設常數)
  * @returns {Object} { products: Array, bomRules: Array }
  */
+/**
+ * 依品號或材料分類代碼反查友善中文材料名稱 (支援材料主檔與舊號去敏相容)
+ * @param {string} codeOrCat 材料品號或分類代碼
+ * @returns {string} 友善中文名稱
+ */
+function resolveMaterialDisplayName(codeOrCat) {
+  const key = String(codeOrCat || "").trim();
+  if (!key) return "";
+
+  // 1. 舊貨號或特定代碼之標準去敏映射
+  const KNOWN_MAP = {
+    "411TBXX037-WT1001": "手提多格收納盒/雪映白",
+    "411TBXX037-BK1001": "手提多格收納盒/曜石黑",
+    "5D3000002": "創意紙膠帶 (7mm/細款)",
+    "MAT-PAN-001": "手提多格收納盒/曜石黑",
+    "MAT-PAN-002": "手提多格收納盒/雪映白",
+    "MAT-WASHI-001": "創意紙膠帶 (7mm/細款)",
+    "請多紙膠A": "手提多格收納盒",
+    "請多紙膠B": "創意紙膠帶"
+  };
+  if (KNOWN_MAP[key]) return KNOWN_MAP[key];
+
+  // 2. 從材料主檔查找
+  try {
+    const materials = getDynamicMasterMaterials(true);
+    const found = materials.find(m => String(m.itemCode).trim() === key);
+    if (found && found.itemName) {
+      return found.color ? `${found.itemName}/${found.color}` : found.itemName;
+    }
+  } catch (e) {}
+
+  return key;
+}
+
 function getDynamicProductsAndBOM() {
   if (_EXEC_CACHE.dynamicBOM) return _EXEC_CACHE.dynamicBOM;
   try {
     const ss = getSpreadsheet();
     const sheet = ss.getSheetByName(CONFIG.SHEETS.BOM_RULES);
     if (!sheet) {
-      return { products: CONFIG.PRODUCTS, bomRules: CONFIG.BOM_RULES };
+      return {
+        products: CONFIG.PRODUCTS,
+        bomRules: CONFIG.BOM_RULES.map(r => {
+          const mName = resolveMaterialDisplayName(r.category);
+          return Object.assign({}, r, { materialName: (mName !== r.category) ? mName : "" });
+        })
+      };
     }
 
     const lastRow = sheet.getLastRow();
     if (lastRow <= 1) {
-      return { products: CONFIG.PRODUCTS, bomRules: CONFIG.BOM_RULES };
+      return {
+        products: CONFIG.PRODUCTS,
+        bomRules: CONFIG.BOM_RULES.map(r => {
+          const mName = resolveMaterialDisplayName(r.category);
+          return Object.assign({}, r, { materialName: (mName !== r.category) ? mName : "" });
+        })
+      };
     }
 
     const rows = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
@@ -326,10 +373,12 @@ function getDynamicProductsAndBOM() {
         };
       }
 
+      const matName = resolveMaterialDisplayName(cat);
       bomRules.push({
         productId: pId,
         productName: pName,
         category: cat,
+        materialName: (matName !== cat) ? matName : "",
         qty: qty,
         note: note
       });
@@ -337,13 +386,25 @@ function getDynamicProductsAndBOM() {
 
     const products = Object.values(productsMap);
     if (products.length === 0) {
-      return { products: CONFIG.PRODUCTS, bomRules: CONFIG.BOM_RULES };
+      return {
+        products: CONFIG.PRODUCTS,
+        bomRules: CONFIG.BOM_RULES.map(r => {
+          const mName = resolveMaterialDisplayName(r.category);
+          return Object.assign({}, r, { materialName: (mName !== r.category) ? mName : "" });
+        })
+      };
     }
 
     _EXEC_CACHE.dynamicBOM = { products: products, bomRules: bomRules };
     return _EXEC_CACHE.dynamicBOM;
   } catch (err) {
-    return { products: CONFIG.PRODUCTS, bomRules: CONFIG.BOM_RULES };
+    return {
+        products: CONFIG.PRODUCTS,
+        bomRules: CONFIG.BOM_RULES.map(r => {
+          const mName = resolveMaterialDisplayName(r.category);
+          return Object.assign({}, r, { materialName: (mName !== r.category) ? mName : "" });
+        })
+      };
   }
 }
 

@@ -820,7 +820,7 @@ function api_getAllProductsAndBOM() {
     // 過濾掉已被停用的原物料配方規則 (在 BOM 表內不見)
     const filteredBomRules = dyn.bomRules.filter(r => {
       const cat = String(r.category || "").trim();
-      return activeItemCodes.has(cat) || categoriesSet.has(cat);
+      return activeItemCodes.has(cat) || categoriesSet.has(cat) || !!r.materialName;
     });
 
     return {
