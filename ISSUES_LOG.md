@@ -532,3 +532,16 @@
   - 客戶端腳本注入 `escapeHtml()` 轉義函式，阻絕潛在之 XSS 漏洞。
   - 於 `gas/00_Config.js` 加入 `getHeaderIndexMap_(sheet)` 動態表頭字典映射，防同仁手動增刪欄位導致系統錯位。
 - **狀態**：🟢 已修復並通過單元測試 (2026-10-26)
+
+---
+
+### ISSUE-039：未來 45 天指定日期推移速查跳出「dayCaps is not defined」試算失敗錯誤
+- **問題描述**：
+  - 使用者在「📅 未來 45 天指定日期推移庫存速查」下拉選單選擇日期（如 2026/10/27）時，系統右側跳出紅字：`試算失敗: 試算推移失敗: dayCaps is not defined`，推移表格卡在「請選擇上方日期速查」無法顯示。
+- **根因分析**：
+  - 在 Phase 26 優化 `api_getProjectionByDate` 導入物料級淨庫存演算法時，替換區塊不慎遺漏了 `const dayCaps = {};` 與 `daysDiff`、`isOver45Days` 的宣告。
+  - 當程式遍歷 `Object.keys(netCapacities).forEach` 執行 `dayCaps[id] = ...` 時，JavaScript 引擎拋出 `ReferenceError: dayCaps is not defined`。
+- **解決方案**：
+  - 於 `gas/05_API.js` 的 `api_getProjectionByDate` 補回 `today`、`targetMid`、`daysDiff`、`isOver45Days` 以及 `const dayCaps = {};` 變數定義。
+  - 重新推送到 GAS 雲端並發布正式版本 Version @38。
+- **狀態**：🟢 已修復並部署至 Version @38 (2026-10-26)

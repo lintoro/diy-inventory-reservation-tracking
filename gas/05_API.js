@@ -211,6 +211,13 @@ function api_getProjectionByDate(targetDateStr) {
     const netCapacities = calculateProductCapacities(netInventory);
     const baseCapacities = calculateProductCapacities();
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const targetMid = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
+    const daysDiff = Math.ceil((targetMid.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const isOver45Days = (daysDiff > 45);
+    const dayCaps = {};
+
     Object.keys(netCapacities).forEach(id => {
       const p = netCapacities[id];
       const baseP = baseCapacities[id] || p;
