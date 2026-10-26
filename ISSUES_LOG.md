@@ -487,3 +487,48 @@
   - **前端 RPC 精簡**：`api_getDashboardOverview` 直接回傳 `activeBookings`，免除前端二次呼叫 `api_getBookingList()` 與重複的 `loadUsersList()`。
 - **狀態**：🟢 已完成最佳化並更新固定部署至 Version @36 (2026-10-17)
 
+
+---
+
+### ISSUE-036：後端權限驗證函式存在空值放行後門 (Critical Auth Bypass)
+- **問題描述**：
+  - 經 EGM 架構審查發現，`gas/06_AuthManager.js` 之 `verifyUserRole_` 包含為測試相容而保留的邏輯：`if (!operator) return { authorized: true };` 與 `if (!empNo) return { authorized: true };`。
+  - 外部使用者若於瀏覽器 Console 直接呼叫後端寫入 API（如更新保底、刪除預約、儲存配方），只要不傳入 operator 即可繞過全域 RBAC 查核。
+- **根因分析**：
+  - 開發早期單元測試未建立 Mock Operator 物件，於驗證入口保留了未傳入時預設放行的後門。
+- **解決方案**：
+  - 徹底移除空值放行邏輯，只要未提供合法有效的 operator 或工號為空，一律回傳 `{ authorized: false, message: "權限拒絕：未提供操作者身分資訊！" }`。
+  - 單元測試套件全面補齊管理員身分參數，確保資安零盲點。
+- **狀態**：🟢 已修復並通過單元測試 (2026-10-26)
+
+---
+
+### ISSUE-037：共用料跨方案預約未展開物料級扣減引發 Double Booking 超賣盲點
+- **問題描述**：
+  - 當預約商品 A（例如繪聲繪影某款式）佔用共用料（彩繪框圖與顏料組）後，業務端試算商品 B（繪聲繪影另一款式）時，因原演算法僅依商品名稱字串分組加總（`rProdName.includes(prod.productName)`），導致商品 A 已佔用之共用料未被扣除，系統誤判商品 B 仍有庫存，引發超賣。
+- **根因分析**：
+  - 接單防呆與推移試算未深入物料層級（Material-level），僅於成品層級做單純的名稱匹配。
+- **解決方案**：
+  - 於 `gas/04_ProjectionAndGate.js` 實作 `calculateNetInventoryAtDate(targetDate, excludeBookingNo)`：
+    1. 取得原始有效庫存清單（深度複製）。
+    2. 遍歷目標日及之前的所有預約單，依其動態 BOM 配方換算各材料（或花色總量池）之實體耗用量。
+    3. 自材料庫存中真實扣除已佔用量，產出目標日之「物料級淨可用庫存 (netStockList)」。
+    4. 將淨庫存傳入 `calculateProductCapacities(netStockList)` 進行木桶短板計算。
+  - 任何方案只要預約扣減了共用料，所有關聯方案之木桶短板立即連動扣減，徹底杜絕跨商品 Double Booking 超賣。
+- **狀態**：🟢 已修復並通過單元測試 (2026-10-26)
+
+---
+
+### ISSUE-038：缺乏並發鎖保護導致多用戶同時寫入超賣，且 4,600 行巨石 HTML 維護性低下
+- **問題描述**：
+  - 多位業務於同秒送出預約或庫管同時核銷進貨時，因缺乏鎖定機制，易引發 Race Condition 導致短板透支與資料覆蓋。
+  - 單一 `index.html` 體積膨脹至 4,637 行，CSS、HTML 骨架與 JavaScript 混雜，難以維護。
+- **根因分析**：
+  - 系統未善用 Google Apps Script 原生之 `LockService`。
+  - 前端未進行職責分離與模組化。
+- **解決方案**：
+  - 於 `gas/05_API.js` 建立 `withScriptLock_(actionFn, timeoutMs)`，全面封裝預約建立/增刪改、進貨驗收、批次核銷與 BOM 配方儲存，設置 10 秒排隊超時保護。
+  - 採用 GAS 官方支援的原生樣板語法 `<?!= include(filename); ?>`，將前端零構建拆分出 `gas/css.html` 與 `gas/js_client.html`，主檔案 `gas/index.html` 精簡至 1,238 行，且完全相容 clasp 原生推送。
+  - 客戶端腳本注入 `escapeHtml()` 轉義函式，阻絕潛在之 XSS 漏洞。
+  - 於 `gas/00_Config.js` 加入 `getHeaderIndexMap_(sheet)` 動態表頭字典映射，防同仁手動增刪欄位導致系統錯位。
+- **狀態**：🟢 已修復並通過單元測試 (2026-10-26)

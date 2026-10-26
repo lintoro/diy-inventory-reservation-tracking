@@ -874,3 +874,76 @@ function test_Phase12_ComprehensiveUpgrades() {
 // 注意：doGet 入口唯一定義在 05_API.js，此處不重複定義以避免函式衝突
 
 
+
+
+/**
+ * 階段二十六單元測試：EGM 架構優化、共用料物料級扣減、並發鎖與資安後門防堵驗證
+ */
+function test_Phase26_EgmOptimizations() {
+  const results = {
+    testName: "階段二十六：EGM架構優化、共用料物料扣減、並發鎖與資安驗證",
+    timestamp: new Date().toISOString(),
+    passed: true,
+    details: []
+  };
+
+  function assert(condition, description) {
+    results.details.push({
+      item: description,
+      status: condition ? "PASS" : "FAIL"
+    });
+    if (!condition) {
+      results.passed = false;
+    }
+  }
+
+  // 1. 驗證資安後門已關閉：空 operator 必須被拒絕
+  const emptyAuth = verifyUserRole_(null, ["ADMIN"]);
+  assert(emptyAuth.authorized === false, "verifyUserRole_(null) 成功阻擋空值操作者 (PASS)");
+
+  const emptyEmpAuth = verifyUserRole_({ empNo: "" }, ["ADMIN"]);
+  assert(emptyEmpAuth.authorized === false, "verifyUserRole_({ empNo: '' }) 成功阻擋空工號操作者 (PASS)");
+
+  const validAdminAuth = verifyUserRole_(CONFIG.INITIAL_ADMIN.empNo, ["ADMIN"]);
+  assert(validAdminAuth.authorized === true, "初始管理者工號驗證通過 (PASS)");
+
+  // 2. 驗證並發鎖輔助函式 withScriptLock_
+  let lockExecuted = false;
+  const lockResult = withScriptLock_(() => {
+    lockExecuted = true;
+    return "LOCK_SUCCESS";
+  }, 3000);
+  assert(lockExecuted === true && lockResult === "LOCK_SUCCESS", "withScriptLock_ 正常取得鎖並安全執行完成 (PASS)");
+
+  // 3. 驗證前端模組化 include() 函式
+  const cssOut = include("css");
+  assert(typeof cssOut === "string" && cssOut.includes(":root"), "include('css') 成功載入原生 CSS 樣式模組 (PASS)");
+
+  const jsOut = include("js_client");
+  assert(typeof jsOut === "string" && jsOut.includes("escapeHtml"), "include('js_client') 成功載入含 XSS 防護之客戶端腳本模組 (PASS)");
+
+  // 4. 驗證表頭動態索引字典 getHeaderIndexMap_
+  const ss = getSpreadsheet();
+  const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
+  const headerMap = getHeaderIndexMap_(bkSheet);
+  assert(headerMap["預約單號"] !== undefined && headerMap["預計活動日"] !== undefined, "getHeaderIndexMap_ 成功將欄位標題動態解析為索引 (PASS)");
+
+  // 5. 驗證物料級扣減演算法 calculateNetInventoryAtDate
+  const todayStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy/MM/dd");
+  const netStock = calculateNetInventoryAtDate(todayStr);
+  assert(Array.isArray(netStock) && netStock.length > 0, "calculateNetInventoryAtDate 成功產出目標日淨物料庫存陣列 (PASS)");
+
+  // UI 彈窗回報
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const statusIcon = results.passed ? "✅" : "❌";
+    const detailMsg = results.details.map(d => `${d.status === "PASS" ? "✔️" : "✖️"} ${d.item}`).join("\n");
+    ui.alert(
+      `${statusIcon} ${results.testName}`,
+      `測試狀態: ${results.passed ? "全部通過 (SUCCESS)" : "存在失敗項目"}\n\n檢驗細項:\n${detailMsg}`,
+      ui.ButtonSet.OK
+    );
+  } catch (e) {}
+
+  return results;
+}

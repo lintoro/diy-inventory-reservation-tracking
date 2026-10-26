@@ -8,7 +8,7 @@
 
 - **Web App 操作介面（工號登入 ＋ 活動抽屜 ＋ 採購核銷與單據直傳 ＋ 商品BOM維護中心 ＋ 原物料主檔管理 ＋ 三軌庫存透視 ＋ ERP 直傳）**：
   👉 [https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec](https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec)
-  - 部署版本：`@30`（Phase 23：新增系統操作日誌 (Audit Log) 全方位記錄、底表結構、查詢介面、8 大維度篩選器、系統自動標記隔離與逾期封存機制；Phase 22：請多紙膠 BOM 全面動態化；Phase 21：預約清冊日期升冪排序/較前排最上、活動已過期不顯示、單號重複防呆、精準列操作；Phase 20：系統全靜態硬編碼全面動態化）
+  - 部署版本：`@37`（Phase 26：EGM 深度架構優化、共用料物料級扣減杜絕 Double Booking 超賣、全寫入 API 注入 LockService 並發鎖、前端巨石零構建模組化拆分 css.html/js_client.html、verifyUserRole_ 資安後門完全封堵、escapeHtml XSS 防護與表頭動態索引字典映射）
   - 預設初始最高管理者：工號 `ADM00001`，密碼已在系統中啟用
   - 介面：響應式多角色視角（ADMIN 人員管理 + 🛡️ 系統操作日誌稽核與查詢 + 業務預約端與雙向維護 + 庫存盤點與 ERP 上傳 + 採購在途清冊 + 📥 進貨驗收單直傳核銷 + ⚠️ 預約缺口提醒清冊 + 🎨 商品與 BOM 維護中心 + 🔩 原物料品號管理）
 - **Google 試算表（資料庫 SSOT）**：

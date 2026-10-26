@@ -1,0 +1,2963 @@
+  <script>
+    let currentUser = null;
+    let cachedDashboardData = null;
+
+    window.addEventListener("DOMContentLoaded", function() {
+      setupDragAndDrop();
+      checkAuthSession();
+    });
+
+    function showLoading(show, msg) {
+      const el = document.getElementById("loading");
+      if (msg) document.getElementById("loading-msg").innerText = msg;
+      el.style.display = show ? "flex" : "none";
+    }
+
+    function checkAuthSession() {
+      // 讀取記住的公司工號
+      const savedEmpNo = localStorage.getItem("diy_saved_empno");
+      const loginEmpInput = document.getElementById("login-empno");
+      const rememberChk = document.getElementById("remember-empno");
+      if (savedEmpNo && loginEmpInput) {
+        loginEmpInput.value = savedEmpNo;
+        if (rememberChk) rememberChk.checked = true;
+      }
+
+      const saved = sessionStorage.getItem("diy_user_session");
+      if (saved) {
+        try {
+          currentUser = JSON.parse(saved);
+          renderAppForUser();
+          return;
+        } catch (e) {
+          sessionStorage.removeItem("diy_user_session");
+        }
+      }
+      showAuthSection(true);
+    }
+
+    function showAuthSection(show) {
+      document.getElementById("auth-section").style.display = show ? "block" : "none";
+      document.getElementById("main-system").style.display = show ? "none" : "block";
+      document.getElementById("header-user-box").style.display = show ? "none" : "flex";
+    }
+
+    function showAuthView(view) {
+      document.getElementById("card-login").style.display = (view === "login") ? "block" : "none";
+      document.getElementById("card-register").style.display = (view === "register") ? "block" : "none";
+    }
+
+    function handleLogin() {
+      const empNo = document.getElementById("login-empno").value.trim();
+      const pwd = document.getElementById("login-pwd").value;
+      if (!empNo || !pwd) {
+        alert("請輸入工號與密碼！");
+        return;
+      }
+
+      showLoading(true, "驗證登入中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          if (!res.success) {
+            alert("❌ " + res.message);
+            return;
+          }
+          currentUser = res.user;
+          sessionStorage.setItem("diy_user_session", JSON.stringify(currentUser));
+
+          // 處理工號記憶
+          const rememberChk = document.getElementById("remember-empno");
+          if (rememberChk && rememberChk.checked) {
+            localStorage.setItem("diy_saved_empno", empNo);
+          } else {
+            localStorage.removeItem("diy_saved_empno");
+          }
+
+          renderAppForUser();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("登入連線失敗: " + err);
+        })
+        .api_login(empNo, pwd);
+    }
+
+    function handleRegister() {
+      const empNo = document.getElementById("reg-empno").value.trim();
+      const name = document.getElementById("reg-name").value.trim();
+      const dept = document.getElementById("reg-dept").value.trim();
+      if (!empNo || !name) {
+        alert("請輸入工號與姓名！");
+        return;
+      }
+
+      showLoading(true, "提交申請中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            document.getElementById("reg-empno").value = "";
+            document.getElementById("reg-name").value = "";
+            document.getElementById("reg-dept").value = "";
+            showAuthView("login");
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("申請失敗: " + err);
+        })
+        .api_registerUser(empNo, name, dept);
+    }
+
+    function handleLogout() {
+      sessionStorage.removeItem("diy_user_session");
+      currentUser = null;
+      document.getElementById("login-pwd").value = "";
+      showAuthSection(true);
+      showAuthView("login");
+    }
+
+    function renderAppForUser() {
+      if (!currentUser) return;
+      showAuthSection(false);
+
+      document.getElementById("user-display-name").innerText = currentUser.name;
+      document.getElementById("user-display-empno").innerText = "(" + currentUser.empNo + ")";
+      document.getElementById("user-display-role").innerText = currentUser.role;
+
+      const ccStaffInput = document.getElementById("cc-staff");
+      if (ccStaffInput) ccStaffInput.value = `${currentUser.name} (${currentUser.empNo})`;
+
+      if (currentUser.mustChangePassword) {
+        document.getElementById("modal-must-change-pwd").style.display = "flex";
+      } else {
+        document.getElementById("modal-must-change-pwd").style.display = "none";
+      }
+
+      const btnAdmin = document.getElementById("tab-btn-admin");
+      const btnAudit = document.getElementById("tab-btn-audit");
+      const btnBooking = document.getElementById("tab-btn-booking");
+      const btnManager = document.getElementById("tab-btn-manager");
+      const btnBom = document.getElementById("tab-btn-bom");
+
+      if (currentUser.role === "ADMIN") {
+        btnAdmin.style.display = "inline-block";
+        if (btnAudit) btnAudit.style.display = "inline-block";
+        btnBooking.style.display = "inline-block";
+        btnManager.style.display = "inline-block";
+        if (btnBom) btnBom.style.display = "inline-block";
+        switchTab("tab-admin");
+      } else if (currentUser.role === "SALES") {
+        btnAdmin.style.display = "none";
+        if (btnAudit) btnAudit.style.display = "none";
+        btnBooking.style.display = "inline-block";
+        btnManager.style.display = "none";
+        if (btnBom) btnBom.style.display = "none";
+        switchTab("tab-booking");
+      } else if (currentUser.role === "INVENTORY") {
+        btnAdmin.style.display = "none";
+        if (btnAudit) btnAudit.style.display = "none";
+        btnBooking.style.display = "none";
+        btnManager.style.display = "inline-block";
+        if (btnBom) btnBom.style.display = "inline-block";
+        switchTab("tab-manager");
+      }
+
+      // 生成建議預約單號帶出
+      initDefaultBookingNo();
+      // 初始化到貨日預設為 15 天後
+      initDefaultArrivalDate();
+      loadDashboard();
+      initProjectionDateSelect();
+    }
+
+    function initDefaultBookingNo(force) {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const r = String(Math.floor(Math.random() * 900) + 100);
+      const input = document.getElementById("bk-no");
+      if (input && (force === true || !input.value)) {
+        input.value = `BK-${y}${m}${d}-${r}`;
+      }
+    }
+
+    function initDefaultArrivalDate() {
+      const now = new Date();
+      now.setDate(now.getDate() + 15);
+      const arrInput = document.getElementById("po-arrival-date");
+      if (arrInput && !arrInput.value) {
+        arrInput.value = now.toISOString().substring(0, 10);
+      }
+    }
+
+    function handleChangePasswordSubmit() {
+      const oldPwd = document.getElementById("chg-old-pwd").value;
+      const newPwd = document.getElementById("chg-new-pwd").value;
+      const confirmPwd = document.getElementById("chg-confirm-pwd").value;
+
+      if (!oldPwd || !newPwd || !confirmPwd) {
+        alert("請完整輸入所有密碼欄位！");
+        return;
+      }
+      if (newPwd !== confirmPwd) {
+        alert("兩次輸入的新密碼不一致！");
+        return;
+      }
+      if (newPwd.length < 6) {
+        alert("新密碼長度至少需 6 碼！");
+        return;
+      }
+
+      showLoading(true, "更新密碼中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          if (!res.success) {
+            alert("❌ " + res.message);
+            return;
+          }
+          alert("🎉 " + res.message);
+          currentUser.mustChangePassword = false;
+          sessionStorage.setItem("diy_user_session", JSON.stringify(currentUser));
+          document.getElementById("modal-must-change-pwd").style.display = "none";
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("修改密碼連線失敗: " + err);
+        })
+        .api_changePassword(currentUser.empNo, oldPwd, newPwd);
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      
+      const pane = document.getElementById(tabId);
+      if (pane) pane.classList.add("active");
+
+      if (tabId === "tab-admin") {
+        document.getElementById("tab-btn-admin").classList.add("active");
+        loadUsersList();
+      }
+      if (tabId === "tab-audit") {
+        const b = document.getElementById("tab-btn-audit");
+        if (b) b.classList.add("active");
+        loadAuditLogs(1);
+      }
+      if (tabId === "tab-booking") document.getElementById("tab-btn-booking").classList.add("active");
+      if (tabId === "tab-manager") document.getElementById("tab-btn-manager").classList.add("active");
+      if (tabId === "tab-bom") {
+        const b = document.getElementById("tab-btn-bom");
+        if (b) b.classList.add("active");
+        loadBOMManagement();
+        loadMaterialsList();
+      }
+    }
+
+    // ==================== 儀表板資料與抽屜渲染 ====================
+    function loadDashboard() {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const dateInput = document.getElementById("bk-date");
+      if (!dateInput.value) {
+        dateInput.value = tomorrow.toISOString().substring(0, 10);
+      }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            console.error("載入儀表板異常: " + res.message);
+            return;
+          }
+          cachedDashboardData = res;
+
+          // 1. 安全提取陣列
+          let capsArray = [];
+          if (Array.isArray(res.capacitiesList)) {
+            capsArray = res.capacitiesList;
+          } else if (res.capacities && typeof res.capacities === "object") {
+            capsArray = Object.keys(res.capacities).map(k => res.capacities[k]);
+          }
+
+          // 2. 渲染組數看板 ＋ 抽屜 (業務端 與 庫存端)
+          renderCapacitiesDrawers("prod-capacities-list-booking", capsArray, res.safetyFloorConfig);
+          renderCapacitiesDrawers("prod-capacities-list-manager", capsArray, res.safetyFloorConfig);
+
+          // 2.1 動態更新業務端預約體驗商品下拉選單
+          renderBookingProductSelect(res.products);
+
+          // 3. 渲染物料下拉選單 (抽盤 ＋ 採購)
+          renderMaterialSelect(res.materials);
+
+          // 4. 直接使用整合回傳的有效預約清單渲染，免除第二次 api_getBookingList RPC 呼叫与重複渲染
+          if (Array.isArray(res.activeBookings)) {
+            renderBookingList(res.activeBookings);
+          } else {
+            loadBookingList();
+          }
+
+          // 5. 渲染在途採購清單
+          renderPendingPOs(res.pendingPOs);
+
+          // 6. 更新保底輸入框預設值
+          if (res.safetyFloorConfig) {
+            document.getElementById("sf-weekday").value = res.safetyFloorConfig.weekday || 10;
+            document.getElementById("sf-weekend").value = res.safetyFloorConfig.weekend || 20;
+          }
+
+          // 7. 觸發即時試算與活動日方案可用組數更新
+          handleBookingDateChanged();
+        })
+        .withFailureHandler(function(err) {
+          console.error("api_getDashboardOverview 失敗: " + err);
+        })
+        .api_getDashboardOverview();
+    }
+
+    // 業務端預計活動日變動連動處理
+    function handleBookingDateChanged() {
+      const dateInput = document.getElementById("bk-date");
+      if (!dateInput) return;
+      const dateVal = dateInput.value;
+      if (!dateVal) return;
+
+      // 1. 執行左側即時預約防呆判定
+      runLiveEligibilityCheck();
+
+      // 2. 更新右側體驗方案可用組數
+      updateBookingCapacitiesByDate(dateVal);
+    }
+
+    function updateBookingCapacitiesByDate(dateVal) {
+      if (!dateVal || !cachedDashboardData) return;
+
+      const titleBadge = document.getElementById("booking-date-badge");
+      if (titleBadge) {
+        titleBadge.innerText = `【${dateVal} 試算視角】`;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            console.error("更新活動日方案組數異常: " + res.message);
+            return;
+          }
+
+          let capsArray = [];
+          if (Array.isArray(cachedDashboardData.capacitiesList)) {
+            capsArray = cachedDashboardData.capacitiesList;
+          } else if (cachedDashboardData.capacities && typeof cachedDashboardData.capacities === "object") {
+            capsArray = Object.keys(cachedDashboardData.capacities).map(k => cachedDashboardData.capacities[k]);
+          }
+
+          // 重新繪製業務端右側方案卡片 (依據活動日與是否>45天顯示)
+          renderCapacitiesDrawers("prod-capacities-list-booking", capsArray, cachedDashboardData.safetyFloorConfig, res);
+        })
+        .withFailureHandler(function(err) {
+          console.error("api_getProjectionByDate 失敗: " + err);
+        })
+        .api_getProjectionByDate(dateVal);
+    }
+
+    // 輔助函式：將 (o色總量池)、(o款共用)、(o款共同) 等具體種類寫死的標記，統一正規化為 (共用總量)
+    function formatSharedLabel(str) {
+      if (!str) return "";
+      return String(str).replace(/\([0-9\u4e00-\u9fa5a-zA-Z]*[色款種]?(總量池|共用|共同|共用料)\)/g, "(共用總量)");
+    }
+
+    // 核心：渲染活動項目卡片與用料抽屜 (支援活動日連動、>45天皆可預訂、三軌庫存透視)
+    function renderCapacitiesDrawers(containerId, capsList, sfConfig, dateContext) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      if (!capsList || capsList.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:16px; color:#94a3b8;">暫無組數資料</div>';
+        return;
+      }
+
+      const wkFloor = sfConfig ? sfConfig.weekday : 10;
+      const weFloor = sfConfig ? sfConfig.weekend : 20;
+      const isBookingView = (containerId === "prod-capacities-list-booking");
+
+      container.innerHTML = capsList.map((p, idx) => {
+        const total = p.maxCapacity || 0;
+        const netWk = Math.max(0, total - wkFloor);
+        const netWe = Math.max(0, total - weFloor);
+        const drawerId = `${containerId}-drawer-${p.productId}`;
+
+        // 依據是否為業務端與日期脈絡決定組數呈現
+        let displayNumHtml = "";
+        let metaDescHtml = "";
+
+        if (isBookingView && dateContext) {
+          if (dateContext.isOver45Days) {
+            displayNumHtml = `<div class="capacity-num" style="color:#059669; font-size:22px; font-weight:700;">皆可預訂</div>`;
+            metaDescHtml = `📅 預約活動日：<b>${dateContext.date}</b> (距今 ${dateContext.daysDiff} 天 >45天) ➔ <span style="color:#059669; font-weight:600;">備料交期充足，排單無限制</span>`;
+          } else {
+            const dateCap = (dateContext.capacities && dateContext.capacities[p.productId]) ? dateContext.capacities[p.productId] : null;
+            const targetNet = (dateCap && dateCap.netQty !== undefined) ? dateCap.netQty : Math.max(0, total - (dateContext.dateType === "假日" ? weFloor : wkFloor));
+            displayNumHtml = `<div class="capacity-num">${targetNet} <span style="font-size:13px; font-weight:500; color:#64748b;">套</span></div>`;
+            metaDescHtml = `📅 預約活動日：<b>${dateContext.date}</b> (${dateContext.dateType}) ｜ 保留現場散客 ${dateContext.safetyFloor} 份 ➔ 當日預計可用：<b style="color:var(--primary);">${targetNet}</b> 套`;
+          }
+        } else {
+          // 庫管端或預設靜態在庫視角
+          displayNumHtml = `<div class="capacity-num">${total} <span style="font-size:13px; font-weight:500; color:#64748b;">套</span></div>`;
+          metaDescHtml = `🔒 現場散客保底 (平日${wkFloor} / 假日${weFloor}) ➔ 業務可接約：平日 <b>${netWk}</b> 套 / 假日 <b>${netWe}</b> 套`;
+        }
+
+        const parts = p.partsDetail || [];
+        const partsRows = parts.map(pt => {
+          const erpVal = (pt.erpQty !== undefined && pt.erpQty !== null) ? pt.erpQty : pt.poolTotal;
+          const cycleHtml = pt.hasCycleCount
+            ? `<strong style="color:#059669;">${pt.cycleCountQty}</strong> <span style="font-size:10px; background:#dcfce7; color:#166534; padding:1px 5px; border-radius:3px; font-weight:600;">[實盤採信]</span>`
+            : `<span style="color:#94a3b8; font-size:12px;">未更動 (帶入系統)</span>`;
+          const effSourceBadge = pt.hasCycleCount
+            ? `<span style="font-size:10px; color:#059669; font-weight:600;">(實盤優先)</span>`
+            : `<span style="font-size:10px; color:#64748b;">(系統兜底)</span>`;
+
+          // 在途補貨提醒 HTML (需求 6)
+          let supplyNoticeHtml = "";
+          if (pt.incomingSupplies && pt.incomingSupplies.length > 0) {
+            const inc = pt.incomingSupplies[0];
+            supplyNoticeHtml = `<div style="font-size:11px; color:#1d4ed8; font-weight:600; margin-top:2px;">📦 預計 ${inc.arrivalDate} 補貨 (+${inc.qty})</div>`;
+          }
+
+          return `
+            <tr class="${pt.isBottleneck ? 'highlight-row' : ''}">
+              <td><strong>${formatSharedLabel(pt.name)}</strong> ${pt.isBottleneck ? '<span style="color:#ef4444; font-size:11px; font-weight:700;">[短板限制]</span>' : ''}</td>
+              <td style="text-align:center;">${pt.requiredPerUnit}</td>
+              <td style="text-align:center; color:#475569;">${erpVal}</td>
+              <td style="text-align:center;">${cycleHtml}</td>
+              <td style="text-align:center; font-weight:700; color:#0f172a;">${pt.poolTotal} ${effSourceBadge}</td>
+              <td style="text-align:center; font-weight:700; color:${pt.isBottleneck ? '#ef4444' : 'var(--primary)'};">${pt.possibleUnits} 套</td>
+              <td>
+                <span class="${pt.statusClass}">${pt.suggestedAction}</span>
+                ${supplyNoticeHtml}
+              </td>
+            </tr>
+          `;
+        }).join("");
+
+        // 方案整卡在途補貨標籤
+        let cardIncomingBadge = "";
+        if (dateContext && dateContext.capacities && dateContext.capacities[p.productId] && dateContext.capacities[p.productId].incomingNoticeText) {
+          cardIncomingBadge = `<div style="margin-top:4px;"><span style="display:inline-block; font-size:11px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:2px 8px; border-radius:12px; font-weight:600;">📦 在途補貨：${dateContext.capacities[p.productId].incomingNoticeText}</span></div>`;
+        }
+
+        return `
+          <div class="capacity-card">
+            <div class="capacity-header" onclick="toggleDrawer('${drawerId}')">
+              <div>
+                <div class="capacity-title">
+                  <span>${p.productName}</span>
+                </div>
+                <div class="capacity-meta">
+                  短板材料：<span style="color:#b91c1c; font-weight:600;">${formatSharedLabel(p.bottleneckCategory)}</span>
+                </div>
+                ${cardIncomingBadge}
+                <div style="font-size:11px; color:#64748b; margin-top:3px;">
+                  ${metaDescHtml}
+                </div>
+              </div>
+              <div class="capacity-stats">
+                ${displayNumHtml}
+                <div style="font-size:12px; color:var(--primary); font-weight:600; margin-top:2px;">
+                  點此展開專屬用料抽屜 ▾
+                </div>
+              </div>
+            </div>
+
+            <!-- 抽屜展開區域 -->
+            <div id="${drawerId}" class="drawer-content">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <div style="font-size:13px; font-weight:700; color:#334155;">
+                  📋 【${p.productName}】專屬原物料庫存與短板透視：
+                </div>
+                <div style="font-size:11px; color:#059669; font-weight:600;">
+                  ✔ 雙軌機制：優先採信現場盤點實數
+                </div>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>原物料名稱 / 規格花色</th>
+                      <th style="text-align:center;">單份需用</th>
+                      <th style="text-align:center;">系統數字 (ERP 640倉)</th>
+                      <th style="text-align:center;">現場盤點實數</th>
+                      <th style="text-align:center;">計算生效在庫</th>
+                      <th style="text-align:center;">換算可做</th>
+                      <th>最晚下單提醒 / 採購狀態</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${partsRows}
+                  </tbody>
+                </table>
+              </div>
+              <div style="font-size:11px; color:#64748b; margin-top:6px; background:#f8fafc; padding:6px 10px; border-radius:4px; border:1px solid #e2e8f0;">
+                💡 <b>雙軌庫存說明</b>：若現場盤點沒有更動，則直接帶入系統數字；在計算組數時，<b>優先以現場盤點數字為主</b>。
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function toggleDrawer(drawerId) {
+      const el = document.getElementById(drawerId);
+      if (el) {
+        el.classList.toggle("open");
+      }
+    }
+
+    // 渲染最近預約紀錄 (今天起 30 天內)
+    function renderRecentBookings(list) {
+      const tbody = document.getElementById("recent-bookings-tbody");
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8; padding:20px 10px;">未來 30 天內暫無預約登記紀錄</td></tr>';
+        return;
+      }
+      tbody.innerHTML = list.map(b => `
+        <tr>
+          <td><strong>${b.bookingNo}</strong></td>
+          <td>${b.eventDate}</td>
+          <td>${b.productName}</td>
+          <td>${b.qty}套</td>
+          <td>${b.groupName}</td>
+          <td><span class="status-badge ${b.light}">${b.light}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    // 動態更新業務端預約體驗商品下拉選單
+    function renderBookingProductSelect(products) {
+      const select = document.getElementById("bk-product");
+      if (!select || !products || products.length === 0) return;
+      const currentVal = select.value;
+      select.innerHTML = products.map(p => `
+        <option value="${p.id}">${p.id}. ${p.name} (${p.desc || ''})</option>
+      `).join("");
+      if (currentVal && products.some(p => p.id === currentVal)) {
+        select.value = currentVal;
+      }
+    }
+
+    let cachedPOList = [];
+    let currentPOTab = 'active';
+
+    function switchPOTab(tab) {
+      currentPOTab = tab;
+      const activeView = document.getElementById("po-view-active");
+      const histView = document.getElementById("po-view-history");
+      const btnActive = document.getElementById("po-tab-btn-active");
+      const btnHist = document.getElementById("po-tab-btn-history");
+
+      if (tab === 'active') {
+        if (activeView) activeView.style.display = "block";
+        if (histView) histView.style.display = "none";
+        if (btnActive) btnActive.className = "btn btn-primary btn-sm";
+        if (btnHist) btnHist.className = "btn btn-outline btn-sm";
+      } else {
+        if (activeView) activeView.style.display = "none";
+        if (histView) histView.style.display = "block";
+        if (btnActive) btnActive.className = "btn btn-outline btn-sm";
+        if (btnHist) btnHist.className = "btn btn-primary btn-sm";
+      }
+    }
+
+    // 渲染在途採購清單與歷史驗收紀錄 (雙視圖分流，8欄精確對齊)
+    function renderPendingPOs(list) {
+      cachedPOList = list || [];
+      const pendingTbody = document.getElementById("pending-pos-tbody");
+      const historyTbody = document.getElementById("history-pos-tbody");
+      const selectAllChk = document.getElementById("po-select-all");
+      if (selectAllChk) selectAllChk.checked = false;
+      updateSelectedPOCount();
+
+      // 材料主檔快取 (供反查標準品名與規格，徹底根治問題 1)
+      const masterMaterials = (cachedDashboardData && cachedDashboardData.materials) ? cachedDashboardData.materials : [];
+
+      // 分流：在途待進貨 vs 歷史已入庫 (解決問題 3)
+      const activeList = (list || []).filter(p => {
+        const s = String(p.status || "").trim();
+        return !s.includes("已到貨") && !s.includes("已取消");
+      });
+
+      const historyList = (list || []).filter(p => {
+        const s = String(p.status || "").trim();
+        return s.includes("已到貨") || s.includes("已取消");
+      });
+
+      const activeBadge = document.getElementById("active-po-count");
+      const histBadge = document.getElementById("history-po-count");
+      if (activeBadge) activeBadge.innerText = activeList.length;
+      if (histBadge) histBadge.innerText = historyList.length;
+
+      // 1. 渲染在途待進貨追蹤清冊 (8 欄嚴格對齊)
+      if (activeList.length === 0) {
+        pendingTbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#94a3b8; padding:24px 10px;">🎉 目前所有採購單據皆已全數到貨結案，無在途待催項目！</td></tr>';
+      } else {
+        pendingTbody.innerHTML = activeList.map(p => {
+          const chkBox = `<input type="checkbox" class="po-item-chk" value="${p.poNumber}" onchange="updateSelectedPOCount()">`;
+          
+          // 動態反查標準品名與規格
+          const mat = masterMaterials.find(m => m.itemCode === p.itemCode);
+          const displayName = (mat && mat.itemName) ? mat.itemName : (p.itemName || p.itemCode);
+          let displaySpec = (mat && mat.color) ? mat.color : (p.spec || "");
+          if (!displaySpec && p.note && !p.note.includes("需求日")) {
+            displaySpec = p.note;
+          }
+
+          const actionBtn = `
+            <button class="btn btn-primary btn-sm" type="button" onclick="openSingleReceiptModal('${p.poNumber}', '${p.itemCode}', ${p.qty}, '${displayName.replace(/'/g, "\\'")}', '${displaySpec.replace(/'/g, "\\'")}')">
+              📦 到貨點交
+            </button>
+          `;
+
+          return `
+            <tr>
+              <td style="text-align:center;">${chkBox}</td>
+              <td><strong>${p.poNumber}</strong></td>
+              <td>${p.demandDate || p.orderDate || "-"}</td>
+              <td><strong style="color:#2563eb;">${p.replenishmentDate || p.deadline || "-"}</strong></td>
+              <td>
+                <div style="font-weight:700; color:#1e293b; font-size:13px;">${p.itemCode} / ${displayName}</div>
+                ${displaySpec ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">規格: ${displaySpec}</div>` : ''}
+              </td>
+              <td style="text-align:center; color:#b91c1c; font-weight:700; font-size:14px;">+${p.qty}</td>
+              <td><span class="status-badge YELLOW" style="font-size:11px;">${p.status || '在途採購'}</span></td>
+              <td style="text-align:center;">${actionBtn}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      // 2. 渲染歷史驗收入庫紀錄 (7 欄嚴格對齊，供查證審計)
+      if (historyList.length === 0) {
+        historyTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:20px 10px;">暫無歷史到貨入庫紀錄</td></tr>';
+      } else {
+        historyTbody.innerHTML = historyList.map(p => {
+          const mat = masterMaterials.find(m => m.itemCode === p.itemCode);
+          const displayName = (mat && mat.itemName) ? mat.itemName : (p.itemName || p.itemCode);
+          let displaySpec = (mat && mat.color) ? mat.color : (p.spec || "");
+
+          const isShortClose = p.status.includes("短交") || p.status.includes("實收0") || p.status.includes("未到貨");
+          const isDirect = p.status.includes("配貨");
+          let statusBadgeClass = "GREEN";
+          if (isShortClose) statusBadgeClass = "YELLOW";
+          if (isDirect) statusBadgeClass = "BLUE";
+
+          const qtyDisplay = (Number(p.qty) === 0)
+            ? `<span style="color:#64748b; font-weight:700;">0 (未到貨)</span>`
+            : `<span style="color:#10b981; font-weight:700;">+${p.qty}</span>`;
+
+          return `
+            <tr style="background:#f8fafc;">
+              <td><strong>${p.poNumber}</strong></td>
+              <td><span class="booking-code-tag">${p.refNo || p.bookingNo || '-'}</span></td>
+              <td>${p.replenishmentDate || p.demandDate || p.orderDate || "-"}</td>
+              <td>
+                <div style="font-weight:700; color:#1e293b; font-size:13px;">${p.itemCode} / ${displayName}</div>
+                ${displaySpec ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">規格: ${displaySpec}</div>` : ''}
+              </td>
+              <td style="text-align:center; font-size:14px;">${qtyDisplay}</td>
+              <td><span class="status-badge ${statusBadgeClass}" style="font-size:11px;">${p.status}</span></td>
+              <td style="font-size:12px; color:#475569;">${p.note || '-'}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+    }
+
+    // ==================== 單筆到貨點交 Modal 邏輯 (解決問題 2) ====================
+    let currentSinglePO = null;
+
+    function openSingleReceiptModal(poNumber, itemCode, qty, itemName, spec) {
+      currentSinglePO = {
+        poNumber: poNumber,
+        itemCode: itemCode,
+        qty: Number(qty) || 0,
+        itemName: itemName,
+        spec: spec
+      };
+
+      document.getElementById("sr-modal-pono").innerText = poNumber;
+      document.getElementById("sr-modal-mat").innerText = `${itemCode} / ${itemName}`;
+      document.getElementById("sr-modal-reqqty").innerText = qty;
+
+      // 預設全數到貨
+      const radios = document.getElementsByName("sr-action-type");
+      radios.forEach(r => { if (r.value === "FULL") r.checked = true; });
+
+      document.getElementById("sr-received-qty").value = qty;
+      document.getElementById("sr-received-group").style.display = "none";
+      document.getElementById("sr-note").value = "";
+      document.getElementById("sr-shortage-hint").innerText = "";
+
+      document.getElementById("modal-single-receipt").style.display = "flex";
+    }
+
+    function closeSingleReceiptModal() {
+      document.getElementById("modal-single-receipt").style.display = "none";
+      currentSinglePO = null;
+    }
+
+    function handleSingleReceiptTypeChange() {
+      if (!currentSinglePO) return;
+      const type = document.querySelector('input[name="sr-action-type"]:checked').value;
+      const recGroup = document.getElementById("sr-received-group");
+      const recInput = document.getElementById("sr-received-qty");
+
+      if (type === "FULL") {
+        recGroup.style.display = "none";
+        recInput.value = currentSinglePO.qty;
+      } else {
+        recGroup.style.display = "block";
+        if (Number(recInput.value) >= currentSinglePO.qty) {
+          recInput.value = "";
+        }
+        calculateSingleReceiptShortage();
+      }
+    }
+
+    function calculateSingleReceiptShortage() {
+      if (!currentSinglePO) return;
+      const type = document.querySelector('input[name="sr-action-type"]:checked').value;
+      const rawVal = document.getElementById("sr-received-qty").value;
+      const recQty = (rawVal === "" || rawVal === null) ? null : Number(rawVal);
+      const originalQty = currentSinglePO.qty;
+      const hint = document.getElementById("sr-shortage-hint");
+
+      if (type === "SHORT_CLOSE") {
+        if (recQty === null || isNaN(recQty) || recQty < 0) {
+          hint.innerText = "請輸入本次實收數量（若全數不來請填 0）";
+          hint.style.color = "#dc2626";
+        } else if (recQty === 0) {
+          hint.innerText = `本次實收 0 套（整筆不會來了），原請購 ${originalQty} 套將全數強制結案清零，在庫不增，在途立即移出！`;
+          hint.style.color = "#d97706";
+        } else if (recQty >= originalQty) {
+          hint.innerText = `實收數量已等於或大於原請購數 (${originalQty})，建議切換為【完工全數到貨】`;
+          hint.style.color = "#2563eb";
+        } else {
+          const shortage = originalQty - recQty;
+          hint.innerText = `本次實收 ${recQty} 套入庫，短交 ${shortage} 套強制結案不再補，在途數量立即清零！`;
+          hint.style.color = "#b45309";
+        }
+      } else if (type === "SHORT_KEEP") {
+        if (recQty === null || isNaN(recQty) || recQty <= 0) {
+          hint.innerText = "短交保留在途模式請輸入大於 0 之實收到貨數量（若尚未到貨請維持在途即可）";
+          hint.style.color = "#dc2626";
+        } else if (recQty >= originalQty) {
+          hint.innerText = `實收數量已等於或大於原請購數 (${originalQty})，建議切換為【完工全數到貨】`;
+          hint.style.color = "#2563eb";
+        } else {
+          const shortage = originalQty - recQty;
+          hint.innerText = `本次實收 ${recQty} 套入庫，剩餘 ${shortage} 套繼續保留在途清單待送`;
+          hint.style.color = "#0369a1";
+        }
+      } else {
+        hint.innerText = "";
+      }
+    }
+
+    function submitSingleReceipt() {
+      if (!currentSinglePO) return;
+      const type = document.querySelector('input[name="sr-action-type"]:checked').value;
+      const rawVal = document.getElementById("sr-received-qty").value;
+      const recQty = (rawVal === "" || rawVal === null) ? NaN : Number(rawVal);
+      const originalQty = currentSinglePO.qty;
+      const userNote = document.getElementById("sr-note").value.trim();
+
+      if (isNaN(recQty) || recQty < 0) {
+        alert("請輸入有效的實收數量！");
+        return;
+      }
+
+      if (type === "FULL" && recQty <= 0) {
+        alert("全數到貨之實收數量必須大於 0！");
+        return;
+      }
+
+      if (type === "SHORT_KEEP" && recQty <= 0) {
+        alert("短交保留在途模式下，本次實收數量必須大於 0！（若尚未到貨請維持在途即可，無需點交）");
+        return;
+      }
+
+      let shortageQty = 0;
+      if (type === "SHORT_CLOSE" || type === "SHORT_KEEP") {
+        if (recQty >= originalQty) {
+          alert(`實收數量已達原採購量 (${originalQty})，請選擇【完工全數到貨】！`);
+          return;
+        }
+        shortageQty = originalQty - recQty;
+      }
+
+      const todayStr = new Date().toISOString().substring(0, 10).replace(/-/g, "/");
+      const recNo = "REC-" + new Date().toISOString().substring(0, 10).replace(/-/g, "");
+
+      const receiptPayload = {
+        receiptNo: recNo,
+        receiptDate: todayStr,
+        vendorName: "現場點交",
+        items: [{
+          itemCode: currentSinglePO.itemCode,
+          itemName: currentSinglePO.itemName,
+          receivedQty: recQty,
+          poNumber: currentSinglePO.poNumber,
+          actionType: type,
+          originalPoQty: originalQty,
+          shortageQty: shortageQty,
+          note: userNote
+        }]
+      };
+
+      let actionText = "";
+      if (type === "FULL") {
+        actionText = "全數到貨入庫";
+      } else if (type === "SHORT_CLOSE") {
+        actionText = (recQty === 0) 
+          ? `整筆未到貨結案 (實收 0，短少 ${shortageQty})` 
+          : `實收 ${recQty}，短交 ${shortageQty} 結案不再補`;
+      } else {
+        actionText = `實收 ${recQty}，短交 ${shortageQty} 保留在途`;
+      }
+
+      const confirmMsg = (recQty === 0)
+        ? `確定要將採購單 [${currentSinglePO.poNumber}] 執行【${actionText}】嗎？\n在途將全數清零移出，避免卡單與超賣！`
+        : `確定要將採購單 [${currentSinglePO.poNumber}] 執行【${actionText}】嗎？\n在庫庫存將即時增加 ${recQty}！`;
+
+      if (!confirm(confirmMsg)) return;
+
+      showLoading(true, "正在執行點交入庫並重新試算推移...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          closeSingleReceiptModal();
+          loadDashboard(); // 重新整理所有看板與清冊
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("點交入庫失敗: " + err);
+        })
+        .api_processGoodsReceipt(receiptPayload, currentUser);
+    }
+
+    // 在途採購多選勾選切換
+    function toggleSelectAllPOs(checked) {
+      document.querySelectorAll(".po-item-chk").forEach(chk => {
+        chk.checked = checked;
+      });
+      updateSelectedPOCount();
+    }
+
+    function updateSelectedPOCount() {
+      const chks = document.querySelectorAll(".po-item-chk:checked");
+      const btn = document.getElementById("btn-batch-receive");
+      const countSpan = document.getElementById("selected-po-count");
+      if (chks.length > 0) {
+        if (btn) btn.style.display = "inline-flex";
+        if (countSpan) countSpan.innerText = chks.length;
+      } else {
+        if (btn) btn.style.display = "none";
+      }
+    }
+
+    // 批次標記已到貨核銷
+    function batchMarkSelectedPOsReceived() {
+      const chks = document.querySelectorAll(".po-item-chk:checked");
+      if (chks.length === 0) {
+        alert("請先勾選欲核銷入庫的採購單！");
+        return;
+      }
+      const poList = Array.from(chks).map(c => c.value);
+      if (!confirm(`確定將選取的 ${poList.length} 筆採購單標記為【已到貨入庫】嗎？\n入庫後該數量將立即併入材料生效庫存！`)) return;
+
+      showLoading(true, `批次核銷 ${poList.length} 筆採購單中...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("批次核銷失敗: " + err);
+        })
+        .api_batchMarkProcurementReceived(poList, currentUser);
+    }
+
+    // 下載標準進貨採購單 CSV 範本
+    function downloadProcurementTemplate() {
+      const csvHeader = "請購單號,品號,品名,請購數量,需求日期(yyyy/MM/dd),備註\n";
+      const sampleRows = [
+        "PO-20261001-01,MAT-ART-001,DIY彩繪框圖卡紙/精裝款,300,2026/10/15,常規進貨補貨",
+        "PO-20261001-02,MAT-ART-002,DIY環保彩繪顏料組/4色,500,2026/10/15,進貨補貨",
+        "PO-20261002-01,MAT-FBE-001,折疊收納籃-短軸插栓/鍍鋅五彩,1000,2026/10/20,收納籃組裝備料"
+      ].join("\n");
+      const blob = new Blob(["\uFEFF" + csvHeader + sampleRows], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "DIY進貨採購單上傳範本.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // 處理採購/進貨檔案直傳 (支援 SheetJS 多工作表解析，相容 PURI05_2.XLSX)
+    let parsedPOPreviewList = [];
+
+    // Excel 日期序號或文字轉 YYYY-MM-DD
+    function parseExcelDate(val) {
+      if (!val) return "";
+      if (typeof val === "number") {
+        // Excel 序列號轉換
+        const utcDays = Math.floor(val - 25569);
+        const dateObj = new Date(utcDays * 86400 * 1000);
+        return dateObj.toISOString().substring(0, 10);
+      }
+      const s = String(val).trim().replace(/-/g, "/");
+      if (/^\d{8}$/.test(s)) {
+        return `${s.substring(0, 4)}-${s.substring(4, 6)}-${s.substring(6, 8)}`;
+      }
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      }
+      return "";
+    }
+
+    // 將日期加上指定天數回傳 YYYY-MM-DD
+    function addDaysToDateStr(dateStr, days) {
+      if (!dateStr) return "";
+      const parts = dateStr.replace(/-/g, "/").split("/");
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      if (isNaN(d.getTime())) return "";
+      d.setDate(d.getDate() + Number(days));
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+
+    function handlePOFileSelected(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      showLoading(true, `正在以 SheetJS 智慧解析進貨單 ${file.name}...`);
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: "array" });
+          
+          let masterOrderNo = "";
+          let targetSheetName = workbook.SheetNames[0];
+
+          // 智慧工作表偵測 (支援 PURI05_2.XLSX 等多 sheet 架構)
+          for (let sName of workbook.SheetNames) {
+            const tempSheet = workbook.Sheets[sName];
+            const tempRows = XLSX.utils.sheet_to_json(tempSheet, { header: 1, defval: "" });
+            if (tempRows && tempRows.length > 0) {
+              const rowStr = tempRows.map(r => r.join(" ")).join(" ");
+              // 若找到請購單號且尚未取得 masterOrderNo
+              if (rowStr.includes("請購單號") && !masterOrderNo) {
+                for (let r of tempRows) {
+                  for (let i = 0; i < r.length; i++) {
+                    if (String(r[i]).includes("請購單號") && tempRows[tempRows.indexOf(r) + 1]) {
+                      const nextRow = tempRows[tempRows.indexOf(r) + 1];
+                      if (nextRow[i]) masterOrderNo = String(nextRow[i]).trim();
+                    }
+                  }
+                }
+              }
+              // 若包含品號與數量，則此 sheet 為明細主工作表
+              if (rowStr.includes("品號") && (rowStr.includes("請購數量") || rowStr.includes("數量"))) {
+                targetSheetName = sName;
+              }
+            }
+          }
+
+          const activeSheet = workbook.Sheets[targetSheetName];
+          const rows = XLSX.utils.sheet_to_json(activeSheet, { header: 1, defval: "" });
+          parseRawPORows(rows, masterOrderNo);
+        } catch (err) {
+          showLoading(false);
+          alert("進貨單檔案解析失敗: " + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      e.target.value = "";
+    }
+
+    // 處理貼上之採購文字 (TSV/CSV)
+    function parsePastedPOText() {
+      const text = document.getElementById("po-paste-text").value.trim();
+      if (!text) {
+        alert("請先貼上採購單內容！");
+        return;
+      }
+      const lines = text.split(/\r?\n/);
+      const rows = lines.map(line => line.split(line.includes("\t") ? "\t" : ","));
+      parseRawPORows(rows, "");
+    }
+
+    // 解析二維陣列採購資料 (自動對齊表頭欄位並計算 需求日+20天 補貨日)
+    function parseRawPORows(rows, defaultMasterNo) {
+      showLoading(true, "檢驗進貨單明細與計算補貨日中...");
+      if (!rows || rows.length === 0) {
+        showLoading(false);
+        alert("單據內容為空！");
+        return;
+      }
+
+      // 智慧防呆偵測：若使用者誤將「ERP 在庫庫存表」(如 DIY全庫存.xlsx) 上傳至此處
+      for (let i = 0; i < Math.min(rows.length, 5); i++) {
+        const rowStr = (rows[i] || []).join(" ");
+        if (rowStr.includes("庫存數量") || (rowStr.includes("庫別") && rowStr.includes("品號"))) {
+          showLoading(false);
+          alert("⚠️ 系統偵測到此檔案為【ERP 在庫庫存表】(如 DIY全庫存.xlsx)！\n\n此處為【在途採購/請購單據】匯入專區（用以登記廠商未到貨之在途訂單）。\n\n若您要更新 ERP 在庫庫存底數，請切換至：\n👉【📦 庫存盤點與 ERP 帳面】➔【📥 ERP 檔案直傳與自動清洗】\n系統將自動篩選 640 倉並更新在庫帳面，避免庫存重複累加！");
+          return;
+        }
+      }
+
+      // 智慧辨識表頭列
+      let headerRowIndex = -1;
+      for (let i = 0; i < Math.min(rows.length, 5); i++) {
+        const rowStr = rows[i].join(" ");
+        if (rowStr.includes("品號") && (rowStr.includes("數量") || rowStr.includes("請購數量"))) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      let reqNoCol = -1, itemCodeCol = -1, itemNameCol = -1, specCol = -1, qtyCol = -1, reqDateCol = -1;
+
+      if (headerRowIndex !== -1) {
+        const headerRow = rows[headerRowIndex];
+        headerRow.forEach((col, idx) => {
+          const str = String(col).trim();
+          if (str.includes("請購單號") || str.includes("採購單號") || str.includes("單號")) reqNoCol = idx;
+          if (str === "品號" || str.includes("材料品號") || str.includes("料號")) itemCodeCol = idx;
+          if (str === "品名" || str.includes("材料名稱")) itemNameCol = idx;
+          if (str === "規格" || str.includes("規格說明")) specCol = idx;
+          if (str.includes("請購數量") || str === "數量" || str.includes("採購數量")) qtyCol = idx;
+          if (str.includes("需求日期") || str.includes("到貨日") || str.includes("預計到貨")) reqDateCol = idx;
+        });
+      }
+
+      const dataRows = (headerRowIndex !== -1) ? rows.slice(headerRowIndex + 1) : rows;
+      parsedPOPreviewList = [];
+      const masterList = (cachedDashboardData && cachedDashboardData.materials) ? cachedDashboardData.materials : [];
+      const todayStr = new Date().toISOString().substring(0, 10);
+
+      dataRows.forEach((r, idx) => {
+        if (!r || r.length < 2) return;
+
+        let reqNo = defaultMasterNo || "";
+        let itemCode = "";
+        let itemName = "";
+        let specStr = "";
+        let qty = 0;
+        let reqDate = todayStr;
+
+        if (headerRowIndex !== -1) {
+          if (reqNoCol !== -1 && r[reqNoCol]) reqNo = String(r[reqNoCol]).trim();
+          if (itemCodeCol !== -1) itemCode = String(r[itemCodeCol]).trim();
+          if (itemNameCol !== -1) itemName = String(r[itemNameCol]).trim();
+          if (specCol !== -1 && r[specCol]) specStr = String(r[specCol]).trim();
+          if (qtyCol !== -1) qty = Number(r[qtyCol]) || 0;
+          if (reqDateCol !== -1 && r[reqDateCol]) {
+            const parsedD = parseExcelDate(r[reqDateCol]);
+            if (parsedD) reqDate = parsedD;
+          }
+        } else {
+          // 容錯順序: 單號, 品號, 數量, 需求日
+          if (String(r[0]).length >= 8 && isNaN(Number(r[1])) === false) {
+            reqNo = String(r[0]).trim();
+            itemCode = String(r[1]).trim();
+            qty = Number(r[2]) || 0;
+            reqDate = parseExcelDate(r[3]) || todayStr;
+          } else {
+            itemCode = String(r[0]).trim();
+            qty = Number(r[1]) || 0;
+            reqDate = parseExcelDate(r[2]) || todayStr;
+          }
+        }
+
+        if (!itemCode || qty <= 0) return;
+
+        // 計算關鍵補貨日 = 需求日期 + 20 天 (需求 4)
+        const arrivalDate = addDaysToDateStr(reqDate, 20) || addDaysToDateStr(todayStr, 20);
+
+        // 比對品名
+        const matched = masterList.find(m => m.itemCode === itemCode);
+        if (!itemName) {
+          itemName = matched ? matched.itemName : itemCode;
+        }
+
+        let noteStr = `需求日:${reqDate}`;
+        if (specStr) noteStr += ` | 規格:${specStr}`;
+        noteStr += ` (+20天到貨)`;
+
+        parsedPOPreviewList.push({
+          reqNo: reqNo,
+          itemCode: itemCode,
+          itemName: itemName,
+          spec: specStr,
+          qty: qty,
+          reqDate: reqDate,
+          arrivalDate: arrivalDate, // 需求日 + 20 天
+          note: noteStr,
+          isMatched: !!matched
+        });
+      });
+
+      showLoading(false);
+      if (parsedPOPreviewList.length === 0) {
+        alert("未解析出任何有效進貨明細 (請確認包含品號與大於 0 的請購數量)！");
+        return;
+      }
+      renderPOPreview();
+    }
+
+    // 渲染採購/進貨單據預覽校對表格
+    function renderPOPreview() {
+      const container = document.getElementById("po-preview-container");
+      const countEl = document.getElementById("po-preview-count");
+      const tbody = document.getElementById("po-preview-tbody");
+
+      container.style.display = "block";
+      countEl.innerText = parsedPOPreviewList.length;
+
+      tbody.innerHTML = parsedPOPreviewList.map((item, idx) => `
+        <tr>
+          <td><input type="text" class="form-input" style="padding:4px 6px; font-size:12px;" value="${item.reqNo}" placeholder="請購單號" onchange="parsedPOPreviewList[${idx}].reqNo=this.value"></td>
+          <td><strong>${item.itemCode}</strong></td>
+          <td style="font-size:12px; color:${item.isMatched ? '#0f172a' : '#b91c1c'};">${item.itemName}</td>
+          <td><input type="number" class="form-input" style="width:70px; padding:4px 6px; font-size:12px;" min="1" value="${item.qty}" onchange="parsedPOPreviewList[${idx}].qty=Number(this.value)"></td>
+          <td><input type="date" class="form-input" style="padding:4px 6px; font-size:12px;" value="${item.reqDate}" onchange="parsedPOPreviewList[${idx}].reqDate=this.value; parsedPOPreviewList[${idx}].arrivalDate=addDaysToDateStr(this.value, 20); renderPOPreview();"></td>
+          <td><strong style="color:#0284c7;">${item.arrivalDate}</strong> <span style="font-size:10px; color:#64748b;">(+20天)</span></td>
+          <td style="text-align:center;"><button class="btn btn-danger btn-sm" onclick="deletePOPreviewRow(${idx})">✕</button></td>
+        </tr>
+      `).join("");
+    }
+
+    function deletePOPreviewRow(idx) {
+      parsedPOPreviewList.splice(idx, 1);
+      if (parsedPOPreviewList.length === 0) {
+        clearPOPreview();
+      } else {
+        renderPOPreview();
+      }
+    }
+
+    function clearPOPreview() {
+      parsedPOPreviewList = [];
+      document.getElementById("po-preview-container").style.display = "none";
+      document.getElementById("po-paste-text").value = "";
+    }
+
+    // 送出確認批量匯入進貨單
+    function confirmBatchCreatePOs() {
+      if (parsedPOPreviewList.length === 0) {
+        alert("預覽清單為空！");
+        return;
+      }
+
+      showLoading(true, `正在批量匯入 ${parsedPOPreviewList.length} 筆進貨單品項至採購清冊...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            clearPOPreview();
+            loadDashboard();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("進貨單匯入失敗: " + err);
+        })
+        .api_importProcurementPURI(parsedPOPreviewList, currentUser);
+    }
+
+    // ==================== 📥 進貨驗收單解析、比對與核銷入庫 JS ====================
+    let currentReceiptCompareData = null; // 當前正在對比的進貨單資料
+
+    function handleReceiptFileSelected(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      showLoading(true, `正在以 SheetJS 智慧解析進貨單 ${file.name}...`);
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: "array" });
+          
+          let receiptNo = "";
+          let receiptDate = "";
+          let vendorName = "";
+          let targetSheetName = workbook.SheetNames[0];
+
+          // 1. 掃描各工作表，提取主單資訊 (進貨單號、進貨日期、供應廠商)
+          for (let sName of workbook.SheetNames) {
+            const tempSheet = workbook.Sheets[sName];
+            const tempRows = XLSX.utils.sheet_to_json(tempSheet, { header: 1, defval: "" });
+            if (tempRows && tempRows.length > 0) {
+              const fullStr = tempRows.map(r => r.join(" ")).join(" ");
+              // 找進貨單號與廠商
+              if (fullStr.includes("進貨單號") && !receiptNo) {
+                for (let rIdx = 0; rIdx < tempRows.length; rIdx++) {
+                  const r = tempRows[rIdx];
+                  for (let cIdx = 0; cIdx < r.length; cIdx++) {
+                    const cStr = String(r[cIdx]).trim();
+                    if (cStr === "進貨單號" && tempRows[rIdx + 1] && tempRows[rIdx + 1][cIdx]) {
+                      receiptNo = String(tempRows[rIdx + 1][cIdx]).trim();
+                    }
+                    if (cStr === "進貨日期" && tempRows[rIdx + 1] && tempRows[rIdx + 1][cIdx]) {
+                      receiptDate = parseExcelDate(tempRows[rIdx + 1][cIdx]);
+                    }
+                    if ((cStr === "供應廠商名稱" || cStr === "供應廠商") && tempRows[rIdx + 1] && tempRows[rIdx + 1][cIdx]) {
+                      vendorName = String(tempRows[rIdx + 1][cIdx]).trim();
+                    }
+                  }
+                }
+              }
+              // 判斷是否為明細表 (包含品號與 驗收數量 或 進貨數量)
+              if (fullStr.includes("品號") && (fullStr.includes("驗收數量") || fullStr.includes("進貨數量") || fullStr.includes("數量"))) {
+                targetSheetName = sName;
+              }
+            }
+          }
+
+          const activeSheet = workbook.Sheets[targetSheetName];
+          const rows = XLSX.utils.sheet_to_json(activeSheet, { header: 1, defval: "" });
+          parseRawReceiptRows(rows, { receiptNo, receiptDate, vendorName });
+        } catch (err) {
+          showLoading(false);
+          alert("進貨單檔案解析失敗: " + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      e.target.value = "";
+    }
+
+    function parsePastedReceiptText() {
+      const text = document.getElementById("receipt-paste-text").value.trim();
+      if (!text) {
+        alert("請先貼上進貨單內容！");
+        return;
+      }
+      const lines = text.split(/\r?\n/);
+      const rows = lines.map(line => line.split(line.includes("\t") ? "\t" : ","));
+      parseRawReceiptRows(rows, { receiptNo: "", receiptDate: "", vendorName: "" });
+    }
+
+    function parseRawReceiptRows(rows, headerMeta) {
+      if (!rows || rows.length === 0) {
+        showLoading(false);
+        alert("進貨單內容為空！");
+        return;
+      }
+
+      // 辨識明細表頭
+      let headerRowIndex = -1;
+      for (let i = 0; i < Math.min(rows.length, 5); i++) {
+        const rowStr = rows[i].join(" ");
+        if (rowStr.includes("品號") && (rowStr.includes("驗收數量") || rowStr.includes("進貨數量") || rowStr.includes("數量"))) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      let itemCodeCol = -1, itemNameCol = -1, specCol = -1, recQtyCol = -1, poNoCol = -1, recNoCol = -1;
+
+      if (headerRowIndex !== -1) {
+        const headerRow = rows[headerRowIndex];
+        headerRow.forEach((col, idx) => {
+          const str = String(col).trim();
+          if (str === "品號" || str.includes("材料品號") || str.includes("料號")) itemCodeCol = idx;
+          if (str === "品名" || str.includes("材料名稱")) itemNameCol = idx;
+          if (str === "規格" || str.includes("規格說明")) specCol = idx;
+          if (str === "驗收數量" || str === "進貨數量" || str.includes("實收數量")) recQtyCol = idx;
+          if (str === "採購單號" || str.includes("請購單號") || str.includes("採購單別")) {
+            if (str === "採購單號" || poNoCol === -1) poNoCol = idx;
+          }
+          if (str === "進貨單號" || str.includes("驗收單號")) recNoCol = idx;
+        });
+      }
+
+      const dataRows = (headerRowIndex !== -1) ? rows.slice(headerRowIndex + 1) : rows;
+      const parsedItems = [];
+      const masterList = (cachedDashboardData && cachedDashboardData.materials) ? cachedDashboardData.materials : [];
+
+      dataRows.forEach(r => {
+        if (!r || r.length < 2) return;
+        let itemCode = "";
+        let itemName = "";
+        let specStr = "";
+        let recQty = 0;
+        let poNo = "";
+        let rowRecNo = headerMeta.receiptNo || "";
+
+        if (headerRowIndex !== -1) {
+          if (itemCodeCol !== -1) itemCode = String(r[itemCodeCol]).trim();
+          if (itemNameCol !== -1) itemName = String(r[itemNameCol]).trim();
+          if (specCol !== -1) specStr = String(r[specCol]).trim();
+          if (recQtyCol !== -1) recQty = Number(r[recQtyCol]) || 0;
+          if (poNoCol !== -1 && r[poNoCol]) poNo = String(r[poNoCol]).trim();
+          if (recNoCol !== -1 && r[recNoCol]) rowRecNo = String(r[recNoCol]).trim();
+        } else {
+          itemCode = String(r[0] || "").trim();
+          itemName = String(r[1] || "").trim();
+          recQty = Number(r[2]) || 0;
+          poNo = String(r[3] || "").trim();
+        }
+
+        if (!itemCode || recQty <= 0) return;
+
+        // 比對品名
+        const matched = masterList.find(m => m.itemCode === itemCode);
+        if (!itemName) {
+          itemName = matched ? matched.itemName : itemCode;
+        }
+
+        parsedItems.push({
+          itemCode: itemCode,
+          itemName: itemName,
+          spec: specStr,
+          receivedQty: recQty,
+          poNumber: poNo,
+          receiptNo: rowRecNo
+        });
+      });
+
+      showLoading(false);
+      if (parsedItems.length === 0) {
+        alert("未解析出任何有效進貨明細 (需包含品號與大於 0 之驗收數量)！");
+        return;
+      }
+
+      const finalRecNo = headerMeta.receiptNo || (parsedItems[0] && parsedItems[0].receiptNo) || "GR-" + new Date().toISOString().substring(0,10).replace(/-/g,"");
+      const finalRecDate = headerMeta.receiptDate || new Date().toISOString().substring(0,10);
+      const finalVendor = headerMeta.vendorName || "合作廠商";
+
+      compareAndOpenReceiptModal({
+        receiptNo: finalRecNo,
+        receiptDate: finalRecDate,
+        vendorName: finalVendor
+      }, parsedItems);
+    }
+
+    // 比對進貨明細與在途採購清冊，並打開比對確認彈窗
+    function compareAndOpenReceiptModal(receiptMeta, items) {
+      const activePOs = (cachedPOList || []).filter(p => {
+        const s = String(p.status || "").trim();
+        return !s.includes("已到貨") && !s.includes("已取消");
+      });
+
+      let fullCount = 0;
+      let shortCount = 0;
+      let directCount = 0;
+
+      const comparedItems = items.map(it => {
+        const itPo = String(it.poNumber || "").trim();
+        const itCode = String(it.itemCode || "").trim();
+        const itQty = Number(it.receivedQty) || 0;
+
+        let matchedPO = null;
+        if (itPo) {
+          matchedPO = activePOs.find(p => {
+            const pPo = String(p.poNumber || "").trim();
+            const pCode = String(p.itemCode || "").trim();
+            return (pPo === itPo || (pPo && itPo && (pPo.includes(itPo) || itPo.includes(pPo)))) && pCode === itCode;
+          });
+        }
+        // 若以單號找不到，嘗試以未結案品號兜底匹配
+        if (!matchedPO) {
+          matchedPO = activePOs.find(p => String(p.itemCode || "").trim() === itCode);
+        }
+
+        let originalPoQty = matchedPO ? (Number(matchedPO.qty) || 0) : 0;
+        let poNo = matchedPO ? String(matchedPO.poNumber || "") : itPo;
+        let matchType = "DIRECT";
+        let shortageQty = 0;
+
+        if (matchedPO) {
+          if (itQty >= originalPoQty) {
+            matchType = "FULL";
+            fullCount++;
+          } else {
+            matchType = "SHORT_CLOSE"; // 短交預設結案不再補，防業務超賣
+            shortageQty = originalPoQty - itQty;
+            shortCount++;
+          }
+        } else {
+          matchType = "DIRECT";
+          directCount++;
+        }
+
+        return {
+          itemCode: itCode,
+          itemName: it.itemName,
+          spec: it.spec,
+          receivedQty: itQty,
+          poNumber: poNo,
+          originalPoQty: originalPoQty,
+          matchType: matchType,
+          shortageQty: shortageQty,
+          actionType: matchType
+        };
+      });
+
+      currentReceiptCompareData = {
+        receiptNo: receiptMeta.receiptNo,
+        receiptDate: receiptMeta.receiptDate,
+        vendorName: receiptMeta.vendorName,
+        items: comparedItems
+      };
+
+      // 渲染彈窗內容
+      document.getElementById("gr-modal-no").innerText = receiptMeta.receiptNo;
+      document.getElementById("gr-modal-date").innerText = receiptMeta.receiptDate;
+      document.getElementById("gr-modal-vendor").innerText = receiptMeta.vendorName || "未指定廠商";
+      document.getElementById("gr-summary-badge").innerText = `共 ${comparedItems.length} 項 (全數到貨 ${fullCount} / 短交不足 ${shortCount} / 直接配貨 ${directCount})`;
+
+      const tbody = document.getElementById("gr-compare-tbody");
+      tbody.innerHTML = comparedItems.map((item, idx) => {
+        let statusBadge = "";
+        let actionControl = "";
+
+        if (item.matchType === "FULL") {
+          statusBadge = '<span class="status-badge GREEN">🟢 完工全數到貨</span>';
+          actionControl = '<span style="color:#10b981; font-weight:600;">採購單整筆結案 (在庫+' + item.receivedQty + ')</span>';
+        } else if (item.matchType === "SHORT_CLOSE") {
+          statusBadge = `<span class="status-badge YELLOW">🟡 短交不足 (少 ${item.shortageQty})</span>`;
+          actionControl = `
+            <select class="form-select" style="font-size:12px; padding:3px 6px;" onchange="currentReceiptCompareData.items[${idx}].actionType = this.value">
+              <option value="SHORT_CLOSE" selected>🔘 結案不再補 (剩餘在途清零)</option>
+              <option value="SHORT_KEEP">⚪ 保留在途 (等待下批補寄)</option>
+            </select>
+          `;
+        } else {
+          statusBadge = '<span class="status-badge" style="background:#8b5cf6; color:white;">🟣 直接配貨進貨</span>';
+          actionControl = '<span style="color:#8b5cf6; font-weight:600;">無採購單，實收認列入庫 (+' + item.receivedQty + ')</span>';
+        }
+
+        return `
+          <tr>
+            <td><span class="booking-code-tag">${item.poNumber || '無前置採購'}</span></td>
+            <td>
+              <div style="font-weight:700; color:#1e293b; font-size:13px;">${item.itemCode} / ${item.itemName}</div>
+              ${item.spec ? `<div style="font-size:11px; color:#64748b;">規格:${item.spec}</div>` : ''}
+            </td>
+            <td style="text-align:center; color:#64748b; font-weight:600;">${item.originalPoQty > 0 ? item.originalPoQty : '-'}</td>
+            <td style="text-align:center; font-size:15px; font-weight:800; color:#10b981;">+${item.receivedQty}</td>
+            <td>${statusBadge}</td>
+            <td>${actionControl}</td>
+          </tr>
+        `;
+      }).join("");
+
+      document.getElementById("modal-receipt-compare").style.display = "flex";
+    }
+
+    function closeReceiptModal() {
+      document.getElementById("modal-receipt-compare").style.display = "none";
+      currentReceiptCompareData = null;
+    }
+
+    // 確認執行進貨驗收單核銷入庫
+    function confirmExecuteGoodsReceipt() {
+      if (!currentReceiptCompareData || !currentReceiptCompareData.items) return;
+
+      showLoading(true, `正在執行進貨單 [${currentReceiptCompareData.receiptNo}] 核銷與庫存更新...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            closeReceiptModal();
+            loadDashboard(); // 重新整理前台組數、在途採購清冊與有效庫存
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("進貨驗收核銷失敗: " + err);
+        })
+        .api_processGoodsReceipt(currentReceiptCompareData, currentUser);
+    }
+
+    // ==================== 📋 預約登記清冊與修改刪除管理 JS ====================
+    let cachedBookingList = [];
+
+    // 載入所有預約清單
+    function loadBookingList() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            console.error("載入預約清單失敗: " + res.message);
+            return;
+          }
+          cachedBookingList = res.bookings || [];
+          renderBookingList(cachedBookingList);
+        })
+        .withFailureHandler(function(err) {
+          console.error("載入預約清單失敗: " + err);
+        })
+        .api_getBookingList();
+    }
+
+    // 星期標記輔助
+    function getBookingWeekdayTag(dateStr) {
+      if (!dateStr) return "";
+      try {
+        const d = new Date(dateStr.replace(/\//g, "-"));
+        if (isNaN(d.getTime())) return "";
+        const day = d.getDay();
+        const names = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
+        const isWeekend = (day === 0 || day === 6);
+        return `<span class="weekday-tag ${isWeekend ? 'weekend' : 'weekday'}">${names[day]}</span>`;
+      } catch (e) {
+        return "";
+      }
+    }
+
+    // 即時篩選清冊 (關鍵字 + 燈號狀態 + 排除過期預約 + 日期較前在最上方)
+    function filterBookingTable() {
+      const keyword = (document.getElementById("booking-search-input") ? document.getElementById("booking-search-input").value : "").trim().toLowerCase();
+      const statusFilter = (document.getElementById("booking-filter-status") ? document.getElementById("booking-filter-status").value : "ALL");
+
+      // 取得今天日期字串 (yyyy/MM/dd)
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+
+      let filtered = cachedBookingList || [];
+
+      // 1. 預約日期已過的不用再顯示在欄位上 (過濾 eventDate < 今天)
+      filtered = filtered.filter(b => {
+        const bDate = String(b.eventDate || "").replace(/-/g, "/").substring(0, 10);
+        return bDate >= todayStr;
+      });
+
+      // 2. 狀態燈號篩選
+      if (statusFilter !== "ALL") {
+        filtered = filtered.filter(b => b.light === statusFilter);
+      }
+
+      // 3. 關鍵字搜尋
+      if (keyword) {
+        filtered = filtered.filter(b => 
+          String(b.bookingNo || "").toLowerCase().includes(keyword) ||
+          String(b.groupName || "").toLowerCase().includes(keyword) ||
+          String(b.phone || "").toLowerCase().includes(keyword) ||
+          String(b.productName || "").toLowerCase().includes(keyword) ||
+          String(b.note || "").toLowerCase().includes(keyword) ||
+          String(b.eventDate || "").includes(keyword)
+        );
+      }
+
+      // 4. 排序：活動日期較前的在最上方 (由近到遠升冪排序)
+      filtered.sort((a, b) => {
+        const d1 = String(a.eventDate || "").replace(/-/g, "/");
+        const d2 = String(b.eventDate || "").replace(/-/g, "/");
+        const diff = d1.localeCompare(d2);
+        if (diff !== 0) return diff;
+        return String(a.createdAt || a.bookingNo || "").localeCompare(String(b.createdAt || b.bookingNo || ""));
+      });
+
+      const totalBadge = document.getElementById("booking-total-badge");
+      if (totalBadge) {
+        if (keyword || statusFilter !== "ALL") {
+          totalBadge.innerText = `符合 ${filtered.length} 筆 (有效共 ${filtered.length} 筆)`;
+        } else {
+          totalBadge.innerText = `共 ${filtered.length} 筆預約`;
+        }
+      }
+
+      renderBookingTableOnly(filtered);
+    }
+
+    // 渲染業務端預約清冊表格本體
+    function renderBookingTableOnly(bookings) {
+      const tbody = document.getElementById("recent-bookings-tbody");
+      if (!tbody) return;
+
+      if (!bookings || bookings.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:32px 10px; font-size:14px;">📭 目前無符合條件之預約登記紀錄</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = bookings.map(b => {
+        let lightTag = `<span class="status-badge ${escapeHtml(b.light)}">${b.light === "YELLOW" ? "🟡需叫貨補料" : (b.light === "RED" ? "🔴額滿禁接" : "🟢庫存充足")}</span>`;
+        let statusColor = (b.light === "GREEN") ? "#64748b" : "#b45309";
+        let statusText = b.procurementStatus ? `<div style="font-size:11px; color:${statusColor}; font-weight:600; margin-top:3px;">${escapeHtml(b.procurementStatus)}</div>` : '';
+        const safeNo = escapeHtml(b.bookingNo);
+
+        return `
+          <tr>
+            <td>
+              <span class="booking-code-tag">${safeNo}</span>
+              ${b.createdAt ? `<div style="font-size:11px; color:#94a3b8; margin-top:3px;">登記:${escapeHtml(b.createdAt.substring(5, 16))}</div>` : ''}
+            </td>
+            <td>
+              <div style="font-weight:700; color:#1e293b; font-size:13px; white-space:nowrap;">
+                ${escapeHtml(b.eventDate)} ${getBookingWeekdayTag(b.eventDate)}
+              </div>
+            </td>
+            <td>
+              <span class="product-tag">${escapeHtml(b.productName)}</span>
+            </td>
+            <td style="text-align:center;">
+              <span style="font-size:16px; font-weight:800; color:var(--primary);">${Number(b.qty) || 0}</span>
+              <span style="font-size:12px; color:#64748b;"> 套</span>
+            </td>
+            <td>
+              <div style="font-weight:700; color:#1e293b; font-size:13px;">${escapeHtml(b.groupName || "一般團體或現場預約")}</div>
+              ${b.phone ? `<div style="font-size:12px; color:#64748b; margin-top:2px;">📞 ${escapeHtml(b.phone)}</div>` : ''}
+              ${b.note ? `<div style="font-size:11px; color:#94a3b8; margin-top:2px; font-style:italic;">📝 ${escapeHtml(b.note)}</div>` : ''}
+            </td>
+            <td>
+              ${lightTag}
+              ${statusText}
+            </td>
+            <td style="text-align:center; white-space:nowrap;">
+              <div style="display:inline-flex; gap:6px;">
+                <button class="btn-action-edit" onclick="openBookingEditModal('${safeNo}', ${Number(b.rowIndex) || 0})" title="修改預約內容">
+                  ✏️ 編輯
+                </button>
+                <button class="btn-action-delete" onclick="deleteBookingItem('${safeNo}', ${Number(b.rowIndex) || 0})" title="取消此筆預約">
+                  🗑️ 取消
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    // 渲染預約清單至業務接單頁面與庫管缺口清冊
+    function renderBookingList(bookings) {
+      cachedBookingList = bookings || [];
+      const shortageTbody = document.getElementById("booking-shortage-tbody");
+
+      // 觸發業務端清冊渲染
+      filterBookingTable();
+
+      // 彙整有缺口之預約 (庫管端缺口提醒清冊，需求 3)
+      if (shortageTbody) {
+        const shortages = bookings.filter(b => b.light === "YELLOW" || String(b.procurementStatus).includes("尚缺"));
+        if (shortages.length === 0) {
+          shortageTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#059669; font-weight:600; padding:16px 10px;">🎉 目前所有預約物料皆充足，無庫存缺口！</td></tr>';
+        } else {
+          shortageTbody.innerHTML = shortages.map(b => `
+            <tr>
+              <td><strong>${escapeHtml(b.bookingNo)}</strong></td>
+              <td><b>${escapeHtml(b.eventDate)}</b></td>
+              <td>${escapeHtml(b.productName)}</td>
+              <td style="text-align:center; font-weight:700;">${Number(b.qty) || 0} 套</td>
+              <td>${escapeHtml(b.groupName)} (${escapeHtml(b.phone || "-")})</td>
+              <td><span style="color:#b91c1c; font-weight:700;">${escapeHtml(b.procurementStatus || "尚缺物料")}</span></td>
+              <td><span style="color:#d97706; font-weight:600;">請安排採購叫貨</span></td>
+            </tr>
+          `).join("");
+        }
+      }
+    }
+
+    // 開啟預約編輯彈窗 (支援 rowIndex 優先定位)
+    function openBookingEditModal(bookingNo, rowIndex) {
+      const item = (rowIndex && cachedBookingList)
+        ? (cachedBookingList.find(b => b.rowIndex === rowIndex) || cachedBookingList.find(b => b.bookingNo === bookingNo))
+        : (cachedBookingList ? cachedBookingList.find(b => b.bookingNo === bookingNo) : null);
+      if (!item) {
+        alert("找不到此預約紀錄！");
+        return;
+      }
+
+      if (document.getElementById("edit-bk-row-index")) {
+        document.getElementById("edit-bk-row-index").value = item.rowIndex || "";
+      }
+      document.getElementById("edit-bk-no").value = item.bookingNo;
+      document.getElementById("edit-bk-date").value = item.eventDate.replace(/\//g, "-");
+      document.getElementById("edit-bk-qty").value = item.qty;
+      document.getElementById("edit-bk-group").value = item.groupName;
+      document.getElementById("edit-bk-phone").value = item.phone;
+      document.getElementById("edit-bk-note").value = item.note || "";
+
+      // 填入商品選單
+      const select = document.getElementById("edit-bk-product");
+      const products = (cachedDashboardData && cachedDashboardData.products && cachedDashboardData.products.length > 0)
+        ? cachedDashboardData.products : [];
+      if (products.length === 0) {
+        select.innerHTML = '<option value="">⚠ 無商品資料，請先返回重新整理</option>';
+      } else {
+        select.innerHTML = products.map(p => `
+          <option value="${escapeHtml(p.name)}" ${String(item.productName || '').includes(p.name) ? 'selected' : ''}>${escapeHtml(p.name)}</option>
+        `).join("");
+      }
+
+      document.getElementById("modal-booking-editor").style.display = "flex";
+    }
+
+    function closeBookingEditModal() {
+      document.getElementById("modal-booking-editor").style.display = "none";
+    }
+
+    // 送出預約修改
+    function submitUpdateBooking() {
+      const rowIndex = document.getElementById("edit-bk-row-index") ? document.getElementById("edit-bk-row-index").value : "";
+      const bookingNo = document.getElementById("edit-bk-no").value.trim();
+      const eventDate = document.getElementById("edit-bk-date").value;
+      const qty = Number(document.getElementById("edit-bk-qty").value) || 0;
+      const productName = document.getElementById("edit-bk-product").value;
+      const groupName = document.getElementById("edit-bk-group").value.trim();
+      const phone = document.getElementById("edit-bk-phone").value.trim();
+      const note = document.getElementById("edit-bk-note").value.trim();
+
+      if (!eventDate || qty <= 0) {
+        alert("請確認活動日期與套數大於 0！");
+        return;
+      }
+
+      showLoading(true, `正在儲存預約單 [${bookingNo}] 修改內容...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            closeBookingEditModal();
+            loadDashboard();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("修改預約失敗: " + err);
+        })
+        .api_updateBooking({
+          bookingNo: bookingNo,
+          rowIndex: rowIndex,
+          eventDate: eventDate,
+          qty: qty,
+          productName: productName,
+          groupName: groupName,
+          phone: phone,
+          note: note
+        }, currentUser);
+    }
+
+    // 刪除預約 (支援 rowIndex)
+    function deleteBookingItem(bookingNo, rowIndex) {
+      if (!confirm(`確定要刪除預約單 [${bookingNo}] 嗎？\n刪除後預約套數將立即釋放回庫存中！`)) return;
+
+      showLoading(true, `正在刪除預約單 [${bookingNo}]...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            loadDashboard();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("刪除預約失敗: " + err);
+        })
+        .api_deleteBooking(bookingNo, rowIndex, currentUser);
+    }
+
+    // ==================== 🎨 商品與 BOM 配方維護中心 JS ====================
+    let cachedBOMData = null;
+
+    function loadBOMManagement() {
+      showLoading(true, "載入商品與 BOM 配方清冊中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          if (!res.success) {
+            alert("❌ " + res.message);
+            return;
+          }
+          cachedBOMData = res;
+          renderBOMProducts(res.products, res.bomRules);
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("載入 BOM 失敗: " + err);
+        })
+        .api_getAllProductsAndBOM();
+    }
+
+    function renderBOMProducts(products, bomRules) {
+      const container = document.getElementById("bom-products-container");
+      if (!products || products.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:30px; color:#94a3b8;">目前無商品資料</div>';
+        return;
+      }
+
+      const ruleMap = {};
+      (bomRules || []).forEach(r => {
+        if (!ruleMap[r.productId]) ruleMap[r.productId] = [];
+        ruleMap[r.productId].push(r);
+      });
+
+      container.innerHTML = products.map(p => {
+        const rules = ruleMap[p.id] || [];
+        const isBuiltin = !!p.isBuiltin;  // 由後端 getDynamicProductsAndBOM 動態標記，不寫死 ID 範圍
+        const rulesBadges = rules.map(r => `
+          <span style="display:inline-block; background:#f1f5f9; border:1px solid #cbd5e1; padding:3px 8px; border-radius:6px; font-size:12px; margin:2px 4px 2px 0;">
+            <b>${r.category}</b> × ${r.qty} <span style="color:#64748b;">(${formatSharedLabel(r.note || '')})</span>
+          </span>
+        `).join("");
+
+        const deleteBtn = isBuiltin ? '' : `
+          <button class="btn btn-danger btn-sm" onclick="handleDeleteProduct('${p.id}', '${p.name}')">
+            🗑️ 刪除商品
+          </button>
+        `;
+
+        return `
+          <div class="card" style="border-left: 4px solid var(--primary); margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="background:var(--primary-light); color:var(--primary); font-weight:700; padding:2px 8px; border-radius:6px; font-size:12px;">ID: ${p.id}</span>
+                  <strong style="font-size: 16px; color: #1e293b;">${p.name}</strong>
+                  ${isBuiltin ? '<span style="font-size:11px; background:#e0e7ff; color:#3730a3; padding:2px 6px; border-radius:4px;">經典內建商品</span>' : '<span style="font-size:11px; background:#dcfce7; color:#166534; padding:2px 6px; border-radius:4px;">自訂DIY商品</span>'}
+                </div>
+                <p style="font-size: 13px; color: #64748b; margin-top: 4px;">${p.desc || ''}</p>
+              </div>
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-outline btn-sm" onclick="openEditProductModal('${p.id}')">
+                  ✏️ 編輯商品與配方
+                </button>
+                ${deleteBtn}
+              </div>
+            </div>
+            <div style="margin-top: 10px; border-top: 1px dashed #e2e8f0; padding-top: 8px;">
+              <div style="font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 4px;">
+                🧩 單份耗用材料組成 (${rules.length} 項部件)：
+              </div>
+              <div>${rulesBadges || '<span style="color:#94a3b8; font-size:12px;">暫無配方</span>'}</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function openNewProductModal() {
+      document.getElementById("bom-modal-title").innerText = "➕ 新增 DIY 體驗商品與配方";
+      document.getElementById("bom-input-id").value = "";
+      document.getElementById("bom-input-id").disabled = false;
+      document.getElementById("bom-input-name").value = "";
+      document.getElementById("bom-input-desc").value = "";
+      document.getElementById("bom-items-tbody").innerHTML = "";
+      addBOMItemRow();
+      document.getElementById("modal-bom-editor").style.display = "flex";
+    }
+
+    function openEditProductModal(productId) {
+      if (!cachedBOMData) return;
+      const prod = cachedBOMData.products.find(p => p.id === productId);
+      if (!prod) return;
+
+      document.getElementById("bom-modal-title").innerText = `✏️ 編輯【${prod.name}】與配方`;
+      document.getElementById("bom-input-id").value = prod.id;
+      document.getElementById("bom-input-id").disabled = true; // 既有商品不可改代碼
+      document.getElementById("bom-input-name").value = prod.name;
+      document.getElementById("bom-input-desc").value = prod.desc || "";
+
+      const rules = cachedBOMData.bomRules.filter(r => r.productId === productId);
+      const activeCats = new Set((cachedBOMData.availableCategories || []).map(c => String(c).trim()));
+      const activeCodes = new Set((cachedBOMData.masterMaterials || []).map(m => String(m.itemCode).trim()));
+      // 僅載入有效啟用中材料之配方 (已停用料在 BOM 表內不見)
+      const validRules = rules.filter(r => {
+        const cat = String(r.category || "").trim();
+        return activeCats.has(cat) || activeCodes.has(cat);
+      });
+
+      const tbody = document.getElementById("bom-items-tbody");
+      tbody.innerHTML = "";
+      if (validRules.length === 0) {
+        addBOMItemRow();
+      } else {
+        validRules.forEach(r => addBOMItemRow(r.category, r.qty, r.note));
+      }
+      document.getElementById("modal-bom-editor").style.display = "flex";
+    }
+
+    function closeBOMModal() {
+      document.getElementById("modal-bom-editor").style.display = "none";
+    }
+
+    function addBOMItemRow(selectedCategory, qty, note) {
+      const tbody = document.getElementById("bom-items-tbody");
+      // fallback 改為空陣列，避免顯示過時的寫死分類清單；若真的無資料，select 會顯示「無可用分類，請重新整理」
+      const cats = (cachedBOMData && cachedBOMData.availableCategories && cachedBOMData.availableCategories.length > 0)
+        ? [...cachedBOMData.availableCategories]
+        : [];
+      const masterMaterials = (cachedBOMData && cachedBOMData.masterMaterials) ? [...cachedBOMData.masterMaterials] : [];
+
+      // 依名稱排序分類群組 (問題 3)
+      cats.sort((a, b) => a.localeCompare(b, "zh-Hant"));
+
+      // 依種類代碼與品號排序具體品號 (問題 2 & 3)
+      masterMaterials.sort((a, b) => {
+        const catCmp = String(a.category || "").localeCompare(String(b.category || ""), "zh-Hant");
+        if (catCmp !== 0) return catCmp;
+        return String(a.itemCode || "").localeCompare(String(b.itemCode || ""));
+      });
+
+      let matchedAny = false;
+      let optionsHtml = '<optgroup label="📦 材料種類代碼 (總量池群組)">';
+      if (cats.length === 0) {
+        optionsHtml += '<option value="" disabled>⚠ 無可用分類，請重新整理頁面</option>';
+      }
+      cats.forEach(c => {
+        const isSel = (selectedCategory === c);
+        if (isSel) matchedAny = true;
+        optionsHtml += `<option value="${c}" ${isSel ? 'selected' : ''}>${c}</option>`;
+      });
+      optionsHtml += '</optgroup>';
+
+      if (masterMaterials.length > 0) {
+        optionsHtml += '<optgroup label="🔩 具體材料品號 (直屬 ERP 貨號品名)">';
+        masterMaterials.forEach(m => {
+          // 選取值直接以唯一 ERP 品號為值，徹底解決同分類選項 value 重複導致儲存後全部跳掉的 Bug (問題 4)
+          const val = m.itemCode;
+          const label = `${m.itemCode} - ${m.itemName} (${m.category})`;
+          const isSel = (selectedCategory === m.itemCode || selectedCategory === m.category);
+          if (isSel) matchedAny = true;
+          optionsHtml += `<option value="${val}" ${isSel ? 'selected' : ''}>${label}</option>`;
+        });
+        optionsHtml += '</optgroup>';
+      }
+
+      // 若指定了 selectedCategory 但不在目前啟用清單中 (例如已被停用)，不應添加或胡亂跳選首項
+      if (selectedCategory && !matchedAny) {
+        return;
+      }
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>
+          <select class="form-select bom-row-category" style="padding:4px 6px; font-size:12px;">
+            ${optionsHtml}
+          </select>
+        </td>
+        <td>
+          <input type="number" class="form-input bom-row-qty" style="padding:4px 6px; font-size:12px;" min="1" value="${qty || 1}">
+        </td>
+        <td>
+          <input type="text" class="form-input bom-row-note" style="padding:4px 6px; font-size:12px;" value="${note || ''}" placeholder="例如：長側板4片">
+        </td>
+        <td style="text-align:center;">
+          <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">✕</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+
+    function submitSaveProductAndBOM() {
+      const pId = document.getElementById("bom-input-id").value.trim();
+      const pName = document.getElementById("bom-input-name").value.trim();
+      const pDesc = document.getElementById("bom-input-desc").value.trim();
+
+      if (!pId || !pName) {
+        alert("商品代碼與名稱為必填項目！");
+        return;
+      }
+
+      const rows = document.querySelectorAll("#bom-items-tbody tr");
+      const bomItems = [];
+      rows.forEach(r => {
+        const cat = r.querySelector(".bom-row-category").value;
+        const q = Number(r.querySelector(".bom-row-qty").value) || 1;
+        const n = r.querySelector(".bom-row-note").value.trim();
+        if (cat) {
+          bomItems.push({ category: cat, qty: q, note: n });
+        }
+      });
+
+      if (bomItems.length === 0) {
+        alert("請至少為此商品新增一項材料配方！");
+        return;
+      }
+
+      showLoading(true, "儲存商品與 BOM 配方中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            closeBOMModal();
+            loadBOMManagement();
+            loadDashboard(); // 重新整理前台組數抽屜與業務下拉選單
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("儲存失敗: " + err);
+        })
+        .api_saveProductAndBOM({ id: pId, name: pName, desc: pDesc }, bomItems, currentUser);
+    }
+
+    function handleDeleteProduct(productId, name) {
+      if (!confirm(`確定要刪除商品【${name}】(ID: ${productId}) 及其所有 BOM 配方嗎？\n此動作將同步影響業務接單選單與推移計算！`)) return;
+
+      showLoading(true, "刪除商品中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadBOMManagement();
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("刪除失敗: " + err);
+        })
+        .api_deleteProduct(productId, currentUser);
+    }
+
+    // ==================== 原物料品號管理 (建立新材料/貨號品名) ====================
+    let cachedMaterialsList = [];
+
+    function loadMaterialsList() {
+      const tbody = document.getElementById("materials-list-tbody");
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8;">載入原物料清單中...</td></tr>';
+      }
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            console.error("載入原物料失敗: " + res.message);
+            return;
+          }
+          cachedMaterialsList = res.materials || [];
+          renderMaterialsList(cachedMaterialsList);
+          updateCategoryDatalist(res.categories || []);
+        })
+        .withFailureHandler(function(err) {
+          console.error("載入原物料失敗: " + err);
+        })
+        .api_getAllMaterials();
+    }
+
+    function updateCategoryDatalist(categories) {
+      const datalist = document.getElementById("mat-category-datalist");
+      if (!datalist) return;
+      datalist.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join("");
+    }
+
+    function renderMaterialsList(materials) {
+      const tbody = document.getElementById("materials-list-tbody");
+      if (!tbody) return;
+
+      if (!materials || materials.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:16px;">目前尚無原物料資料</td></tr>';
+        return;
+      }
+
+      // 依三階層排序：#材料種類代碼 ##ERP品號 ###品名規格
+      materials.sort((a, b) => {
+        const catCmp = String(a.category || "").localeCompare(String(b.category || ""), "zh-Hant");
+        if (catCmp !== 0) return catCmp;
+        const codeCmp = String(a.itemCode || "").localeCompare(String(b.itemCode || ""));
+        if (codeCmp !== 0) return codeCmp;
+        const nameA = `${a.itemName || ""} ${a.color || ""}`;
+        const nameB = `${b.itemName || ""} ${b.color || ""}`;
+        return nameA.localeCompare(nameB, "zh-Hant");
+      });
+
+      tbody.innerHTML = materials.map(m => {
+        const isInactive = (m.status === "停用");
+        return `
+          <tr style="${isInactive ? 'opacity: 0.65; background: #f8fafc;' : ''}">
+            <td><strong>${m.itemCode}</strong></td>
+            <td>${m.itemName}</td>
+            <td><span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:12px; font-weight:600;">${m.category}</span></td>
+            <td>${m.color || '-'}</td>
+            <td style="font-size:12px; color:#64748b;">${m.note || '-'}</td>
+            <td>
+              <span class="status-badge ${isInactive ? 'RED' : 'GREEN'}" style="font-size:11px;">
+                ${isInactive ? '⚪ 停用' : '🟢 啟用'}
+              </span>
+            </td>
+            <td>
+              <div style="display:flex; gap:4px;">
+                <button class="btn btn-outline btn-sm" onclick="openEditMaterialModal('${m.itemCode}')">
+                  ✏️ 編輯
+                </button>
+                <button class="btn ${isInactive ? 'btn-success' : 'btn-danger'} btn-sm" onclick="toggleMaterialStatus('${m.itemCode}', '${m.status}')">
+                  ${isInactive ? '🟢 啟用' : '🔴 停用'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function openNewMaterialModal() {
+      document.getElementById("mat-modal-title").innerText = "➕ 建立新原物料品號 (貨號品名)";
+      const codeInput = document.getElementById("mat-input-code");
+      codeInput.value = "";
+      codeInput.disabled = false;
+      document.getElementById("mat-input-name").value = "";
+      document.getElementById("mat-input-category").value = "";
+      document.getElementById("mat-input-color").value = "";
+      document.getElementById("mat-input-note").value = "";
+      document.getElementById("modal-material-editor").style.display = "flex";
+    }
+
+    function openEditMaterialModal(itemCode) {
+      const mat = cachedMaterialsList.find(m => m.itemCode === itemCode);
+      if (!mat) return;
+
+      document.getElementById("mat-modal-title").innerText = `✏️ 編輯原物料【${mat.itemName}】`;
+      const codeInput = document.getElementById("mat-input-code");
+      codeInput.value = mat.itemCode;
+      codeInput.disabled = true; // 既有材料不可改品號
+      document.getElementById("mat-input-name").value = mat.itemName;
+      document.getElementById("mat-input-category").value = mat.category || "";
+      document.getElementById("mat-input-color").value = mat.color || "";
+      document.getElementById("mat-input-note").value = mat.note || "";
+      document.getElementById("modal-material-editor").style.display = "flex";
+    }
+
+    function closeMaterialModal() {
+      document.getElementById("modal-material-editor").style.display = "none";
+    }
+
+    function submitSaveMaterial() {
+      const code = document.getElementById("mat-input-code").value.trim();
+      const name = document.getElementById("mat-input-name").value.trim();
+      const cat = document.getElementById("mat-input-category").value.trim();
+      const color = document.getElementById("mat-input-color").value.trim();
+      const note = document.getElementById("mat-input-note").value.trim();
+
+      if (!code || !name || !cat) {
+        alert("材料品號 (貨號)、品名與材料種類代碼為必填項目！");
+        return;
+      }
+
+      showLoading(true, "儲存材料主檔中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            closeMaterialModal();
+            loadMaterialsList();
+            loadBOMManagement(); // 同步更新 BOM 下拉選單中之材料
+            loadDashboard(); // 同步更新庫管抽盤與採購下拉選單
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("儲存材料失敗: " + err);
+        })
+        .api_saveMaterial({
+          itemCode: code,
+          itemName: name,
+          category: cat,
+          color: color,
+          note: note
+        }, currentUser);
+    }
+
+    function toggleMaterialStatus(itemCode, currentStatus) {
+      const targetStatus = (currentStatus === "停用") ? "啟用" : "停用";
+      const actionName = (targetStatus === "啟用") ? "啟用" : "停用";
+
+      if (targetStatus === "停用") {
+        if (!confirm(`確定要停用原物料 [${itemCode}] 嗎？\n停用後將從 BOM 配方與接單推移中隱藏，材料表中仍可隨時重新啟用。`)) return;
+      }
+
+      showLoading(true, `正在${actionName}原物料 [${itemCode}]...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            loadMaterialsList();
+            loadBOMManagement();
+            loadDashboard();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert(`${actionName}失敗: ` + err);
+        })
+        .api_toggleMaterialStatus(itemCode, targetStatus, currentUser);
+    }
+
+    function renderMaterialSelect(materials) {
+      const ccSelect = document.getElementById("cc-item-code");
+      const poSelect = document.getElementById("po-item-code");
+      if (!materials) return;
+      
+      const opts = materials.map(m => `
+        <option value="${m.itemCode}">${m.itemName} (${m.itemCode})</option>
+      `).join("");
+
+      if (ccSelect) ccSelect.innerHTML = opts;
+      if (poSelect) poSelect.innerHTML = opts;
+    }
+
+    // 提交採購下單 (INPUT 表單)
+    function submitProcurementOrder() {
+      const itemCode = document.getElementById("po-item-code").value;
+      const qty = Number(document.getElementById("po-qty").value);
+      const arrivalDate = document.getElementById("po-arrival-date").value;
+      const note = document.getElementById("po-note").value;
+
+      if (!itemCode || isNaN(qty) || qty <= 0) {
+        alert("請選擇採購材料並輸入有效的採購數量！");
+        return;
+      }
+
+      showLoading(true, "建立在途採購單中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            document.getElementById("po-qty").value = "";
+            document.getElementById("po-note").value = "";
+            loadDashboard();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("建立採購單失敗: " + err);
+        })
+        .api_createProcurementOrder({
+          itemCode: itemCode,
+          qty: qty,
+          arrivalDate: arrivalDate,
+          note: note
+        }, currentUser);
+    }
+
+    // 標記採購到貨核銷
+    function markPOReceived(poNumber) {
+      if (!confirm(`確定採購單 [${poNumber}] 貨品已全數點收入庫嗎？`)) return;
+
+      showLoading(true, "核銷採購到貨中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("核銷失敗: " + err);
+        })
+        .api_markProcurementReceived(poNumber, currentUser);
+    }
+
+    // 庫管儲存現場散客保底
+    function saveSafetyFloorSettings() {
+      const weekday = Number(document.getElementById("sf-weekday").value);
+      const weekend = Number(document.getElementById("sf-weekend").value);
+
+      if (isNaN(weekday) || isNaN(weekend) || weekday < 0 || weekend < 0) {
+        alert("請輸入有效的散客保底數量！");
+        return;
+      }
+
+      showLoading(true, "儲存散客保底並重新推移 45 天中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadDashboard();
+          handleProjectionDateChange();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("儲存保底失敗: " + err);
+        })
+        .api_updateSafetyFloor(currentUser.empNo, weekday, weekend, null);
+    }
+
+    // 初始化未來 45 天日期下拉選單
+    function initProjectionDateSelect() {
+      const select = document.getElementById("proj-date-select");
+      if (!select) return;
+      const today = new Date();
+      select.innerHTML = "";
+
+      for (let i = 1; i <= 45; i++) {
+        const d = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const dStr = `${y}/${m}/${day}`;
+        const dayOfWeek = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"][d.getDay()];
+        const isWe = (d.getDay() === 0 || d.getDay() === 6);
+        const opt = document.createElement("option");
+        opt.value = dStr;
+        opt.innerText = `${dStr} (${dayOfWeek}${isWe ? " - 假日" : " - 平日"})`;
+        select.appendChild(opt);
+      }
+      handleProjectionDateChange();
+    }
+
+    function handleProjectionDateChange() {
+      const select = document.getElementById("proj-date-select");
+      if (!select) return;
+      const dateVal = select.value;
+      if (!dateVal) return;
+
+      document.getElementById("proj-date-meta").innerText = `正在試算 ${dateVal} 推移淨可用量...`;
+      
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            document.getElementById("proj-date-meta").innerText = "試算失敗: " + res.message;
+            return;
+          }
+          document.getElementById("proj-date-meta").innerHTML = `
+            📅 <b>${res.date}</b> (${res.dateType}) ｜ 現場散客保底預留：<strong style="color:var(--primary);">${res.safetyFloor} 份</strong>
+          `;
+
+          const tbody = document.getElementById("proj-date-tbody");
+          const caps = res.capacities || {};
+          tbody.innerHTML = Object.keys(caps).map(k => {
+            const item = caps[k];
+            const isZero = (item.netQty <= 0);
+            return `
+              <tr>
+                <td><strong>${item.name}</strong></td>
+                <td style="text-align:center;">${item.grossCapacity} 套</td>
+                <td style="text-align:center;">${item.safetyFloor} 份</td>
+                <td style="text-align:center;">${item.bookedQty} 套</td>
+                <td style="text-align:center; font-size:15px; font-weight:700; color:${isZero ? '#ef4444' : 'var(--primary)'};">${item.netQty} 套</td>
+                <td>${isZero ? '<span class="status-badge RED">缺料/需叫貨</span>' : '<span class="status-badge GREEN">充足可約</span>'}</td>
+              </tr>
+            `;
+          }).join("");
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById("proj-date-meta").innerText = "試算失敗: " + err;
+        })
+        .api_getProjectionByDate(dateVal);
+    }
+
+    // 業務即時試算
+    function runLiveEligibilityCheck() {
+      const dateVal = document.getElementById("bk-date").value;
+      const prodVal = document.getElementById("bk-product").value;
+      const qtyVal = Number(document.getElementById("bk-qty").value) || 0;
+      if (!dateVal) return;
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) return;
+          const panel = document.getElementById("status-box");
+          const badge = document.getElementById("status-badge");
+          const text = document.getElementById("status-text");
+          const submitBtn = document.getElementById("btn-submit-booking");
+
+          panel.className = "status-panel " + res.light;
+          badge.className = "status-badge " + res.light;
+          
+          if (res.light === "GREEN") {
+            badge.innerText = "🟢 綠燈 (正常接單)";
+            submitBtn.disabled = false;
+          } else if (res.light === "YELLOW") {
+            badge.innerText = "🟡 黃燈 (需採購叫貨)";
+            submitBtn.disabled = false;
+          } else {
+            badge.innerText = "🔴 紅燈 (禁止接單)";
+            submitBtn.disabled = true;
+          }
+
+          text.innerText = res.statusText;
+          document.getElementById("stat-days-diff").innerText = res.daysDiff + " 天";
+          document.getElementById("stat-safety-floor").innerText = (res.isWeekend ? "假日保留 " : "平日保留 ") + res.safetyFloor + " 份";
+          document.getElementById("stat-max-avail").innerText = res.maxAvailableForBooking + " 套";
+          document.getElementById("stat-bottleneck").innerText = res.bottleneckCategory;
+
+          const deadlineRow = document.getElementById("stat-order-deadline-row");
+          if (res.procurementNeeded && res.latestOrderDate) {
+            deadlineRow.style.display = "flex";
+            document.getElementById("stat-order-deadline").innerText = res.latestOrderDate;
+          } else {
+            deadlineRow.style.display = "none";
+          }
+        })
+        .api_checkEligibility(dateVal, prodVal, qtyVal);
+    }
+
+    // 業務送單 (支援自訂單號)
+    function submitBookingForm() {
+      const data = {
+        bookingNo: document.getElementById("bk-no").value.trim(),
+        eventDate: document.getElementById("bk-date").value,
+        productId: document.getElementById("bk-product").value,
+        qty: Number(document.getElementById("bk-qty").value),
+        groupName: document.getElementById("bk-group").value,
+        phone: document.getElementById("bk-phone").value,
+        note: document.getElementById("bk-note").value
+      };
+
+      if (!data.eventDate || !data.qty) {
+        alert("請確認活動日期與預約套數！");
+        return;
+      }
+
+      showLoading(true, "送出預約登記中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          if (!res.success) {
+            alert("❌ 送單失敗: " + res.message);
+            return;
+          }
+          let msg = `✅ 預約單 [${res.bookingNo}] 登記成功！`;
+          if (res.light === "YELLOW") {
+            msg += `\n⚠️【庫存缺口提醒】本筆預約尚有材料缺口，請通知主管手動安排叫貨！\n狀態說明: ${res.message}`;
+          } else {
+            msg += `\n狀態: 🟢 綠燈 (物料庫存充足)`;
+          }
+          alert(msg);
+          document.getElementById("bk-group").value = "";
+          document.getElementById("bk-phone").value = "";
+          document.getElementById("bk-note").value = "";
+          const noInput = document.getElementById("bk-no");
+          if (noInput) noInput.value = "";
+          initDefaultBookingNo(true); // 強制產生下一組全新單號，避免重複
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("送單失敗: " + err);
+        })
+        .api_submitBooking(data, currentUser);
+    }
+
+    // 抽盤登記
+    function submitCycleCount() {
+      const itemCode = document.getElementById("cc-item-code").value;
+      const qty = document.getElementById("cc-qty").value;
+      const staff = document.getElementById("cc-staff").value;
+      const note = document.getElementById("cc-note").value;
+
+      if (qty === "" || isNaN(Number(qty))) {
+        alert("請輸入有效的實盤數量！");
+        return;
+      }
+
+      showLoading(true, "抽盤實數寫入中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          if (!res.success) {
+            alert("抽盤登記失敗: " + res.message);
+            return;
+          }
+          alert(`✅ 抽盤登記完成！\n品號: ${res.itemCode}\n實盤: ${res.actualQty} | ERP帳面: ${res.erpQty}\n盤差: ${res.diff} (${res.status})\n生效庫存已即時校準！`);
+          document.getElementById("cc-qty").value = "";
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("抽盤失敗: " + err);
+        })
+        .api_recordCycleCount(itemCode, Number(qty), staff, note, currentUser);
+    }
+
+    // ERP 檔案拖曳與解析
+    function setupDragAndDrop() {
+      const dropZone = document.getElementById("drop-zone");
+      if (!dropZone) return;
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, e => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.add("dragover");
+        }, false);
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, e => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.remove("dragover");
+        }, false);
+      });
+
+      dropZone.addEventListener('drop', e => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files && files.length > 0) {
+          parseAndUploadERPFile(files[0]);
+        }
+      }, false);
+    }
+
+    function handleFileSelected(event) {
+      const file = event.target.files[0];
+      if (file) {
+        parseAndUploadERPFile(file);
+      }
+    }
+
+    function parseAndUploadERPFile(file) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+        alert("❌ 僅支援 .xlsx、.xls 或 .csv 格式之檔案！");
+        return;
+      }
+
+      showLoading(true, `正在以 SheetJS 解析 ${file.name}...`);
+      const reader = new FileReader();
+
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+
+          if (!rows || rows.length <= 1) {
+            showLoading(false);
+            alert("檔案解析成功但無有效資料內容！");
+            return;
+          }
+
+          showLoading(true, `檔案解析成功 (${rows.length} 列)，正在進行 640 倉過濾清洗與推移計算...`);
+
+          google.script.run
+            .withSuccessHandler(function(res) {
+              showLoading(false);
+              const alertBox = document.getElementById("upload-status-alert");
+              if (res.success) {
+                alertBox.style.display = "block";
+                alertBox.style.background = "var(--green-bg)";
+                alertBox.style.color = "#065f46";
+                alertBox.style.border = "1px solid #a7f3d0";
+                alertBox.innerText = res.message;
+                alert(res.message);
+                loadDashboard();
+              } else {
+                alertBox.style.display = "block";
+                alertBox.style.background = "var(--red-bg)";
+                alertBox.style.color = "#991b1b";
+                alertBox.style.border = "1px solid #fecaca";
+                alertBox.innerText = "❌ " + res.message;
+                alert("上傳失敗: " + res.message);
+              }
+              document.getElementById("erp-file-input").value = "";
+            })
+            .withFailureHandler(function(err) {
+              showLoading(false);
+              alert("上傳清洗出錯: " + err);
+            })
+            .api_uploadAndCleanERP(rows, file.name, currentUser);
+
+        } catch (err) {
+          showLoading(false);
+          alert("檔案解析失敗: " + err.message);
+        }
+      };
+
+      reader.readAsArrayBuffer(file);
+    }
+
+    function importPastedERP() {
+      const text = document.getElementById("erp-paste-text").value;
+      if (!text.trim()) {
+        alert("請貼入 ERP 內容！");
+        return;
+      }
+      showLoading(true, "清洗貼上內容中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          document.getElementById("erp-paste-text").value = "";
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("清洗失敗: " + err);
+        })
+        .api_importERPPastedText(text, currentUser);
+    }
+
+    function resetSampleERP() {
+      if (!confirm("確定要將 ERP 資料重置為 175 筆真實原始報表資料嗎？")) return;
+      showLoading(true, "載入範例資料中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadDashboard();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("重置失敗: " + err);
+        })
+        .api_resetSampleERP(currentUser);
+    }
+
+    // ADMIN 人員清單
+    function loadUsersList() {
+      if (!currentUser || currentUser.role !== "ADMIN") return;
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            alert("讀取人員名冊失敗: " + res.message);
+            return;
+          }
+          renderUsersList(res.users);
+        })
+        .api_getUsers(currentUser.empNo);
+    }
+
+    function renderUsersList(users) {
+      const pendingTbody = document.getElementById("pending-users-tbody");
+      const allTbody = document.getElementById("all-users-tbody");
+
+      let total = users.length;
+      const pendingUsers = users.filter(u => u.status === "PENDING");
+      const activeCount = users.filter(u => u.status === "ACTIVE").length;
+
+      document.getElementById("stat-total-users").innerText = total;
+      document.getElementById("stat-pending-users").innerText = pendingUsers.length;
+      document.getElementById("stat-active-users").innerText = activeCount;
+
+      if (pendingUsers.length === 0) {
+        pendingTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:16px 10px;">目前無待審核申請</td></tr>';
+      } else {
+        pendingTbody.innerHTML = pendingUsers.map(u => `
+          <tr>
+            <td><strong>${u.empNo}</strong></td>
+            <td>${u.name}</td>
+            <td style="font-size:12px; color:#64748b;">${u.createdAt}</td>
+            <td>
+              <select id="role-select-${u.empNo}" class="form-select" style="padding:4px 8px; font-size:12px; width:auto;">
+                <option value="SALES" selected>業務 (SALES)</option>
+                <option value="INVENTORY">庫存 (INVENTORY)</option>
+                <option value="ADMIN">管理 (ADMIN)</option>
+              </select>
+            </td>
+            <td>
+              <button class="btn btn-success btn-sm" onclick="approveUser('${u.empNo}')">核准開通</button>
+            </td>
+          </tr>
+        `).join("");
+      }
+
+      allTbody.innerHTML = users.map(u => {
+        let roleTag = `<span class="tag tag-sales">業務 (SALES)</span>`;
+        if (u.role === "ADMIN") roleTag = `<span class="tag tag-admin">管理者 (ADMIN)</span>`;
+        if (u.role === "INVENTORY") roleTag = `<span class="tag tag-inv">庫存 (INVENTORY)</span>`;
+
+        let statusTag = `<span class="tag tag-active">正常啟用</span>`;
+        if (u.status === "PENDING") statusTag = `<span class="tag tag-pending">待審核</span>`;
+        if (u.status === "DISABLED") statusTag = `<span class="tag tag-disabled">已停用</span>`;
+        const isSuperAdmin = (u.empNo === "ADM00001" || u.isInitialAdmin);
+        const toggleBtn = isSuperAdmin ? `<span style="font-size:11px; color:#94a3b8;">最高管理員</span>` : `
+          <button class="btn btn-outline btn-sm" onclick="toggleUserStatus('${u.empNo}', '${u.status === "ACTIVE" ? "DISABLED" : "ACTIVE"}')">
+            ${u.status === "ACTIVE" ? "🛑 停用" : "🟢 啟用"}
+          </button>
+        `;
+
+        return `
+          <tr>
+            <td><strong>${u.empNo}</strong></td>
+            <td>${u.name}</td>
+            <td>${roleTag}</td>
+            <td>${statusTag}</td>
+            <td>${u.mustChangePassword ? '<span style="color:#d97706; font-weight:600;">是</span>' : '<span style="color:#10b981;">已變更</span>'}</td>
+            <td style="font-size:12px; color:#64748b;">${u.lastLoginAt || "從未登入"}</td>
+            <td>
+              <div style="display:flex; gap:6px; align-items:center;">
+                ${toggleBtn}
+                <button class="btn btn-outline btn-sm" onclick="resetUserPassword('${u.empNo}')" title="重設為 000000">
+                  🔑 重設密碼
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function approveUser(empNo) {
+      const role = document.getElementById("role-select-" + empNo).value;
+      if (!confirm(`確定要核准工號 [${empNo}] 並指派為 [${role}] 嗎？`)) return;
+
+      showLoading(true, "核准開通中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadUsersList();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("審核失敗: " + err);
+        })
+        .api_approveUser(currentUser.empNo, empNo, role);
+    }
+
+    function toggleUserStatus(empNo, targetStatus) {
+      const actionName = (targetStatus === "ACTIVE") ? "啟用" : "停用";
+      if (!confirm(`確定要【${actionName}】工號 [${empNo}] 嗎？`)) return;
+
+      showLoading(true, `${actionName}處理中...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadUsersList();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("操作失敗: " + err);
+        })
+        .api_toggleUserStatus(currentUser.empNo, empNo, targetStatus);
+    }
+
+    function resetUserPassword(empNo) {
+      if (!confirm(`確定要將工號 [${empNo}] 的密碼重設為 000000 嗎？（同仁下次登入必須設定新密碼）`)) return;
+
+      showLoading(true, "重設密碼中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          loadUsersList();
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("重設失敗: " + err);
+        })
+        .api_resetUserPassword(currentUser.empNo, empNo);
+    }
+
+    function handleAdminCreateUser() {
+      const empNo = document.getElementById("admin-new-empno").value.trim();
+      const name = document.getElementById("admin-new-name").value.trim();
+      const role = document.getElementById("admin-new-role").value;
+
+      if (!empNo || !name) {
+        alert("請輸入工號與姓名！");
+        return;
+      }
+
+      showLoading(true, "建立同仁中...");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showLoading(false);
+          alert(res.message);
+          if (res.success) {
+            document.getElementById("admin-new-empno").value = "";
+            document.getElementById("admin-new-name").value = "";
+            loadUsersList();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showLoading(false);
+          alert("建立失敗: " + err);
+        })
+        .api_createUserByAdmin(currentUser.empNo, empNo, name, role);
+    }
+
+    // ==================== 系統操作日誌 (Audit Log) 控制器 ====================
+    let auditCurrentPage = 1;
+    let auditTotalPages = 1;
+    let currentAuditLogsCache = [];
+
+    function getAuditFiltersFromUI() {
+      return {
+        startDate: document.getElementById("audit-filter-start").value || "",
+        endDate: document.getElementById("audit-filter-end").value || "",
+        module: document.getElementById("audit-filter-module").value || "ALL",
+        action: document.getElementById("audit-filter-action").value || "ALL",
+        status: document.getElementById("audit-filter-status").value || "ALL",
+        source: document.getElementById("audit-filter-source").value || "ALL",
+        keyword: (document.getElementById("audit-filter-keyword").value || "").trim(),
+        showAuto: document.getElementById("audit-filter-show-auto").checked
+      };
+    }
+
+    function resetAuditFilters() {
+      document.getElementById("audit-filter-start").value = "";
+      document.getElementById("audit-filter-end").value = "";
+      document.getElementById("audit-filter-module").value = "ALL";
+      document.getElementById("audit-filter-action").value = "ALL";
+      document.getElementById("audit-filter-status").value = "ALL";
+      document.getElementById("audit-filter-source").value = "ALL";
+      document.getElementById("audit-filter-keyword").value = "";
+      document.getElementById("audit-filter-show-auto").checked = false;
+      loadAuditLogs(1);
+    }
+
+    function loadAuditLogs(targetPage) {
+      if (!currentUser || currentUser.role !== "ADMIN") return;
+      auditCurrentPage = targetPage || 1;
+
+      const filters = getAuditFiltersFromUI();
+      const tbody = document.getElementById("audit-logs-tbody");
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 20px;">載入日誌中...</td></tr>';
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            alert("載入操作日誌失敗: " + res.message);
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #ef4444; padding: 16px;">載入失敗: ${res.message}</td></tr>`;
+            return;
+          }
+
+          // 刷新頂部統計
+          if (res.stats) {
+            document.getElementById("stat-audit-today-total").innerText = res.stats.todayCount || 0;
+            document.getElementById("stat-audit-today-fail").innerText = res.stats.todayFailures || 0;
+            document.getElementById("stat-audit-today-users").innerText = res.stats.todayActiveUsers || 0;
+          }
+
+          auditTotalPages = res.totalPages || 1;
+          currentAuditLogsCache = res.logs || [];
+          renderAuditLogsTable(res);
+        })
+        .withFailureHandler(function(err) {
+          alert("日誌連線異常: " + err);
+          tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #ef4444; padding: 16px;">連線失敗: ${err}</td></tr>`;
+        })
+        .api_getAuditLogs(currentUser.empNo, filters, auditCurrentPage, 50);
+    }
+
+    function renderAuditLogsTable(res) {
+      const tbody = document.getElementById("audit-logs-tbody");
+      const logs = res.logs || [];
+      const total = res.totalCount || 0;
+      const page = res.page || 1;
+      const totalPages = res.totalPages || 1;
+
+      // 分頁條資訊
+      const startCount = total === 0 ? 0 : (page - 1) * 50 + 1;
+      const endCount = Math.min(page * 50, total);
+      document.getElementById("audit-page-start").innerText = startCount;
+      document.getElementById("audit-page-end").innerText = endCount;
+      document.getElementById("audit-page-total").innerText = total;
+      document.getElementById("audit-page-current").innerText = `第 ${page} / ${totalPages} 頁`;
+
+      document.getElementById("audit-btn-prev").disabled = (page <= 1);
+      document.getElementById("audit-btn-next").disabled = (page >= totalPages);
+
+      if (logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 24px;">查無符合條件之操作日誌</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = logs.map(item => {
+        let statusBadge = item.status === "成功"
+          ? '<span class="tag tag-success">成功</span>'
+          : '<span class="tag tag-failed">失敗</span>';
+
+        let sourceBadge = '<span class="tag tag-webapp">網頁</span>';
+        if (item.source === "SYSTEM_AUTO") {
+          sourceBadge = '<span class="tag tag-auto">系統自動</span>';
+        } else if (item.source === "SHEET_MANUAL") {
+          sourceBadge = '<span class="tag tag-manual">試算表手動</span>';
+        }
+
+        const operatorText = item.name ? `${item.name} (${item.empNo})` : (item.empNo || "SYSTEM");
+        const isFail = item.status === "失敗";
+        const rowClass = isFail ? 'class="highlight-row"' : "";
+
+        let summaryText = escapeHtml(item.summary);
+        if (item.errorMessage) {
+          summaryText += `<div style="font-size: 11px; color: #ef4444; margin-top: 2px;">錯誤: ${escapeHtml(item.errorMessage)}</div>`;
+        }
+
+        return `
+          <tr ${rowClass}>
+            <td style="font-family: ui-monospace, monospace; font-size: 12px; color: #475569; white-space: nowrap;">${item.time}</td>
+            <td style="font-size: 12px; font-weight: 600;">${escapeHtml(operatorText)}</td>
+            <td><span class="tag tag-sales" style="font-size: 11px;">${escapeHtml(item.module)}</span></td>
+            <td><strong>${escapeHtml(item.action)}</strong></td>
+            <td style="font-size: 12px; color: #334155; word-break: break-all;">${escapeHtml(item.target || "-")}</td>
+            <td style="font-size: 12px; color: #1e293b; line-height: 1.4;">${summaryText}</td>
+            <td>${statusBadge}</td>
+            <td>${sourceBadge}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function changeAuditPage(delta) {
+      const targetPage = auditCurrentPage + delta;
+      if (targetPage >= 1 && targetPage <= auditTotalPages) {
+        loadAuditLogs(targetPage);
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function exportAuditLogsCsv() {
+      if (!currentAuditLogsCache || currentAuditLogsCache.length === 0) {
+        alert("目前清單中無可匯出之日誌紀錄！");
+        return;
+      }
+
+      const headers = ["紀錄ID", "操作時間", "工號", "姓名", "角色", "功能模組", "動作類型", "目標物件", "操作摘要", "結果", "錯誤訊息", "來源"];
+      const rows = currentAuditLogsCache.map(l => [
+        `"${(l.logId || "").replace(/"/g, '""')}"`,
+        `"${(l.time || "").replace(/"/g, '""')}"`,
+        `"${(l.empNo || "").replace(/"/g, '""')}"`,
+        `"${(l.name || "").replace(/"/g, '""')}"`,
+        `"${(l.role || "").replace(/"/g, '""')}"`,
+        `"${(l.module || "").replace(/"/g, '""')}"`,
+        `"${(l.action || "").replace(/"/g, '""')}"`,
+        `"${(l.target || "").replace(/"/g, '""')}"`,
+        `"${(l.summary || "").replace(/"/g, '""')}"`,
+        `"${(l.status || "").replace(/"/g, '""')}"`,
+        `"${(l.errorMessage || "").replace(/"/g, '""')}"`,
+        `"${(l.source || "").replace(/"/g, '""')}"`
+      ]);
+
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(r => r.join(","))].join("\r\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `DIY系統操作日誌_${timestamp}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  </script>

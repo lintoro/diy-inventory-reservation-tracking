@@ -576,3 +576,22 @@ function deleteDynamicMasterMaterial(itemCode) {
   return toggleDynamicMasterMaterialStatus(itemCode, "停用");
 }
 
+
+
+/**
+ * 試算表表頭動態索引映射字典 (防非工程師人員手動在試算表插入/調動欄位導致系統錯位崩潰)
+ * @param {Sheet} sheet Google Sheets 工作表
+ * @returns {Object} { [headerName: string]: number (0-based col index) }
+ */
+function getHeaderIndexMap_(sheet) {
+  if (!sheet) return {};
+  const lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return {};
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const map = {};
+  headers.forEach((h, idx) => {
+    const cleanH = String(h || "").trim();
+    if (cleanH) map[cleanH] = idx;
+  });
+  return map;
+}

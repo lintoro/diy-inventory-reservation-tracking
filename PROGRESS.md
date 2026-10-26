@@ -1,6 +1,6 @@
 # 專案進度與里程碑追蹤 (PROGRESS.md)
 
-最後更新時間：2026-10-17
+最後更新時間：2026-10-26
 
 ## 項目進度摘要
 
@@ -21,6 +21,7 @@
 | **Phase 12：跨日累計扣除、預約編輯刪除、進貨單+20天補貨日、到貨入庫累加庫存、在庫到貨提醒與缺口提醒** | 修復跨日推移預約扣除累計 Bug (9/29預訂38套，9/30正確累計扣除)、新增業務預約管理清冊與彈窗編輯/刪除功能、移除黃燈自動建立採購單改為醒目缺口提醒、進貨單上傳/貼上支援 PURI05_2 多工作表並自動以需求日+20天換算補貨日、採購清冊標記到貨立即累加材料在庫庫存、庫存卡片與抽屜即時顯示在途補貨預計到貨提醒 | 🟢 已完成 (正式交付) | 100% |
 | **Phase 13~24：進貨驗收核銷、停用料管理、動態預約核銷與系統操作日誌 (Audit Log)** | 進貨驗收單對比核銷、實收 0 結案清零、共用總量標籤統一、預約清冊動態庫存核銷、全模組操作日誌稽核與獨立 LOG 導覽頁籤 | 🟢 已完成 (正式交付) | 100% |
 | **Phase 25：全方位效能、I/O 批次化、RBAC 資安強化與 BOM 100% 動態化最佳化** | 單次執行期記憶體快取 (`_EXEC_CACHE`)、試算表讀寫批次化 (`setValues` 取代逐列 `setValue`)、後端全寫入 API 補齊 `verifyUserRole_` 權限驗證、封閉 `doGet` 未授權外部接口、BOM 引擎 100% 動態化與殘留字詞全數去敏、前端消除重複 RPC | 🟢 已完成 (正式交付) | 100% |
+| **Phase 26：EGM 架構優化、共用料物料級扣減、並發鎖、XSS防護與前端模組化拆分** | 拔除 `verifyUserRole_` 空值放行後門、實作「物料級精準淨庫存扣減」徹底解決共用料 Double Booking 超賣盲點、關鍵寫入 API 全面導入 `withScriptLock_` 分散式並發鎖、前端巨石 HTML 採用 GAS 原生樣板拆分為 `css.html` 與 `js_client.html`、表頭動態索引字典映射 (`getHeaderIndexMap_`) | 🟢 已完成 (正式交付) | 100% |
 
 ---
 
@@ -267,3 +268,22 @@
     - `api_getDashboardOverview()` 合併回傳 `activeBookings`，並消除前端 `loadDashboard`、`submitBookingForm`、`submitUpdateBooking`、`deleteBookingItem`、`renderAppForUser` 中重複的 `api_getBookingList` 與 `api_getUsers` 呼叫，大幅提升首屏與操作回應速度。
     - 修復 `api_importProcurementPURI(ordersList, operator)` 缺少 `operator` 參數及 `confirmExecuteGoodsReceipt` 漏傳 `currentUser` 之問題。
   - **固定部署更新**：以固定 Deployment ID 更新部署至 Version **`@36`**。
+
+
+### 2026-10-26
+- [x] 完成 Phase 26（EGM 深度架構審查、共用料物料級扣減、並發鎖、XSS 防護與前端模組化拆分）：
+  - **關閉資安後門 (ISSUE-034)**：
+    - 徹底移除 `gas/06_AuthManager.js` 中 `verifyUserRole_` 之 `if (!operator) return { authorized: true };` 與空工號放行邏輯，未授權請求強制拋出 401 拒絕。
+  - **修復共用料 Double Booking 盲點 (ISSUE-035)**：
+    - 實作 `calculateNetInventoryAtDate(targetDate, excludeBookingNo)`，推移與接單改採「物料級扣減」，所有商品預約消耗之材料依 BOM 單份用量直接自各物料庫存扣抵，跨方案共用料（如彩繪框圖、顏料、折疊籃零件）精準連動，杜絕超賣。
+  - **全面導入分散式並發鎖 (`LockService`)**：
+    - 於 `gas/05_API.js` 封裝 `withScriptLock_`，保護預約送單、預約修改、預約取消、進貨驗收、採購批次核銷與 BOM 配方儲存，設置 10 秒排隊超時保護，徹底消除高並發覆蓋與單號衝突。
+  - **前端 HTML 巨石零構建模組化拆分**：
+    - 後端提供 `include(filename)` 樣板輔助函式。
+    - 將原先 4,637 行之 `gas/index.html` 拆分出 `gas/css.html` (440 行樣式表) 與 `gas/js_client.html` (2,965 行客戶端腳本)，主結構精簡至 1,238 行，各司其職且 100% 相容 clasp 原生推送。
+  - **前端全域 XSS 轉義防護**：
+    - 於 `gas/js_client.html` 導入 `escapeHtml()` 輔助函式，阻絕預約單備註與團體名稱之惡意腳本注入。
+  - **試算表表頭動態索引字典映射**：
+    - 於 `gas/00_Config.js` 新增 `getHeaderIndexMap_(sheet)`，防止非工程師同仁手動在 Google Sheets 插入或更動欄位造成系統索引錯位崩潰。
+  - **完成 Phase 26 單元測試套件與選單掛載**：
+    - 撰寫 `test_Phase26_EgmOptimizations()` 並加入試算表選單第 14 項。

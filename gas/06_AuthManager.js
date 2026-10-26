@@ -287,14 +287,14 @@ function verifyAdmin_(adminEmpNo) {
  */
 function verifyUserRole_(operator, allowedRoles) {
   if (!operator) {
-    return { authorized: true };
+    return { authorized: false, message: "權限拒絕：未提供操作者身分資訊！" };
   }
   const empNo = typeof operator === "string"
     ? String(operator).trim().toUpperCase()
     : String(operator.empNo || "").trim().toUpperCase();
 
   if (!empNo) {
-    return { authorized: true };
+    return { authorized: false, message: "權限拒絕：操作者工號不得為空！" };
   }
 
   const sheet = getUserAccountSheet_();

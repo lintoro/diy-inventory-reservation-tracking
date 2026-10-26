@@ -1,3 +1,89 @@
+
+/**
+ * 物料級精準淨可用量試算 (修復共用料 Double Booking 盲點)
+ * 計算指定目標日期或之前，扣除所有商品預約佔用之材料剩餘庫存
+ * @param {string|Date} targetDate 目標日期
+ * @param {string} [excludeBookingNo] 排除的預約單號 (供編輯預約時使用)
+ * @returns {Array<Object>} 扣除預約消耗後的有效材料庫存清單 (netStockList)
+ */
+function calculateNetInventoryAtDate(targetDate, excludeBookingNo) {
+  const targetDateObj = targetDate instanceof Date ? targetDate : new Date(String(targetDate));
+  const targetDateStr = Utilities.formatDate(targetDateObj, "Asia/Taipei", "yyyy/MM/dd");
+  
+  // 1. 取得原始生效庫存 (深度複製)
+  const baseStock = getEffectiveInventory();
+  const netStockList = JSON.parse(JSON.stringify(baseStock));
+  
+  // 建立分類總量與個別品號映射
+  const itemMap = {};
+  const catItemsMap = {};
+  netStockList.forEach(it => {
+    itemMap[it.itemCode] = it;
+    if (!catItemsMap[it.category]) catItemsMap[it.category] = [];
+    catItemsMap[it.category].push(it);
+  });
+
+  // 2. 累計在目標日前預計到貨之採購量 (若有在途)
+  // (可擴充: 目前 getEffectiveInventory 已包含 incomingSupplies 供參考)
+
+  // 3. 讀取所有預約單
+  const ss = getSpreadsheet();
+  const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
+  if (!bkSheet || bkSheet.getLastRow() <= 1) {
+    return netStockList;
+  }
+
+  const bkRows = bkSheet.getRange(2, 1, bkSheet.getLastRow() - 1, 10).getValues();
+  const bomData = getDynamicProductsAndBOM();
+  const bomRules = bomData.bomRules || [];
+
+  // 4. 逐筆遍歷目標日及之前的所有預約，依 BOM 配方進行物料級扣減
+  bkRows.forEach(r => {
+    const bNo = String(r[0] || "").trim();
+    if (excludeBookingNo && bNo === String(excludeBookingNo).trim()) {
+      return; // 編輯預約時排除自身
+    }
+
+    let bDateStr = "";
+    if (r[1] instanceof Date) {
+      bDateStr = Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd");
+    } else {
+      bDateStr = String(r[1] || "").substring(0, 10).replace(/-/g, "/");
+    }
+
+    if (bDateStr <= targetDateStr) {
+      const pName = String(r[2] || "").trim();
+      const bQty = Number(r[3]) || 0;
+      if (bQty <= 0) return;
+
+      // 找出該預約商品對應之所有 BOM 配方項
+      const rules = bomRules.filter(br => br.productName === pName);
+      rules.forEach(rule => {
+        const reqQty = (Number(rule.qty) || 1) * bQty;
+        const catOrCode = String(rule.category || "").trim();
+
+        // 優先以材料分類池 (總量池) 扣除
+        if (catItemsMap[catOrCode] && catItemsMap[catOrCode].length > 0) {
+          let remainToDeduct = reqQty;
+          for (let it of catItemsMap[catOrCode]) {
+            if (it.effectiveQty > 0) {
+              const deduct = Math.min(it.effectiveQty, remainToDeduct);
+              it.effectiveQty -= deduct;
+              remainToDeduct -= deduct;
+              if (remainToDeduct <= 0) break;
+            }
+          }
+        } else if (itemMap[catOrCode]) {
+          // 個別品號扣除
+          itemMap[catOrCode].effectiveQty = Math.max(0, itemMap[catOrCode].effectiveQty - reqQty);
+        }
+      });
+    }
+  });
+
+  return netStockList;
+}
+
 /**
  * 45 天動態推移、15 天交期時間閘門防呆與缺料採購單生成 (04_ProjectionAndGate.js)
  */
@@ -52,46 +138,30 @@ function calculateDaysDiff(eventDate) {
  * @param {number} bookingQty 欲預訂套數
  * @returns {Object} 試算與檢核報告 (含燈號 GREEN / YELLOW / RED)
  */
-function checkBookingEligibility(eventDate, productId, bookingQty) {
+function checkBookingEligibility(eventDate, productId, bookingQty, excludeBookingNo) {
   const targetDate = eventDate instanceof Date ? eventDate : new Date(String(eventDate));
+  const targetDateStr = Utilities.formatDate(targetDate, "Asia/Taipei", "yyyy/MM/dd");
   const daysDiff = calculateDaysDiff(targetDate);
   const safetyFloor = getSafetyFloor(targetDate);
   const isWeekend = isHolidayOrWeekend(targetDate);
 
-  // 取得全產品當前基礎上限 (木桶短板)
-  const capacities = calculateProductCapacities();
-  const prod = capacities[productId];
+  // 1. 先取得扣除目標日及之前所有預約之物料級淨庫存
+  const netInventory = calculateNetInventoryAtDate(targetDate, excludeBookingNo);
+  
+  // 2. 基於淨庫存動態運算木桶短板 (各商品共用料已被真實扣減)
+  const netCapacities = calculateProductCapacities(netInventory);
+  const prod = netCapacities[productId];
   if (!prod) {
     return { success: false, message: `無效的商品編號: ${productId}` };
   }
 
-  // 讀取該日期及之前已存在的團體預約已扣量 (累計扣除，避免跨日超賣)
-  const ss = getSpreadsheet();
-  const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
-  const bkLastRow = bkSheet.getLastRow();
-  let existingBookedQty = 0;
-  
-  const targetDateStr = Utilities.formatDate(targetDate, "Asia/Taipei", "yyyy/MM/dd");
-  if (bkLastRow > 1) {
-    const bkRows = bkSheet.getRange(2, 1, bkLastRow - 1, 10).getValues();
-    bkRows.forEach(r => {
-      let rDateStr = "";
-      if (r[1] instanceof Date) {
-        rDateStr = Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd");
-      } else {
-        rDateStr = String(r[1] || "").substring(0, 10).replace(/-/g, "/");
-      }
-      const rProdName = String(r[2] || "");
-      const rQty = Number(r[3]) || 0;
-      // 只要活動日 <= 查詢目標日，即代表物料在此日期或之前已被佔用
-      if (rDateStr <= targetDateStr && rProdName.includes(prod.productName)) {
-        existingBookedQty += rQty;
-      }
-    });
-  }
+  // 取得基準庫存上限 (未扣預約前的實體在庫)
+  const baseCapacities = calculateProductCapacities();
+  const baseProd = baseCapacities[productId] || prod;
 
-  // 可預約上限 = 基礎短板可做套數 - 散客保底 - 累計已預訂套數
-  const maxAvailableForBooking = Math.max(0, prod.maxCapacity - safetyFloor - existingBookedQty);
+  // 可預約上限 = 扣除其他預約後之短板可做套數 - 散客保底
+  const maxAvailableForBooking = Math.max(0, prod.maxCapacity - safetyFloor);
+  const existingBookedQty = Math.max(0, baseProd.maxCapacity - prod.maxCapacity);
   const requestedQty = Number(bookingQty) || 0;
 
   let light = "GREEN";

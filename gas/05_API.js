@@ -1,3 +1,32 @@
+
+/**
+ * 樣板包含輔助函式 (供 index.html 模組化引入 CSS 與 JS 子檔案)
+ * @param {string} filename 欲載入之 html 檔案名稱
+ * @returns {string} 檔案內容字串
+ */
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+
+/**
+ * 通用分散式並發鎖輔助函式 (防超賣與並發覆蓋)
+ * @param {Function} actionFn 需鎖定保護之業務邏輯函式
+ * @param {number} [timeoutMs=10000] 等候鎖超時時間 (毫秒)
+ */
+function withScriptLock_(actionFn, timeoutMs = 10000) {
+  const lock = LockService.getScriptLock();
+  const hasLock = lock.tryLock(timeoutMs);
+  if (!hasLock) {
+    throw new Error("系統繁忙中（其他同仁正在處理寫入作業），請稍候 3 秒後重試！");
+  }
+  try {
+    return actionFn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /**
  * Web App 前端介面與 API 控制器 (05_API.js)
  */
@@ -177,38 +206,16 @@ function api_getProjectionByDate(targetDateStr) {
     const isWk = isHolidayOrWeekend(parsedDate);
     const dateType = isWk ? "假日" : "平日";
     
-    // 即時調用木桶短板引擎進行推移
-    const capacities = calculateProductCapacities();
-    const dayCaps = {};
-    
-    // 檢查該活動日及之前已預約總套數 (累計扣除，推移正確反映物料消耗)
-    const ss = getSpreadsheet();
-    const bkSheet = ss.getSheetByName(CONFIG.SHEETS.BOOKING_RECORDS);
-    const bkLastRow = bkSheet.getLastRow();
-    const bookingsOnDate = {}; // productName -> bookedQty
+    // 即時調用物料級扣抵試算目標日淨可用庫存 (共用料精準扣減)
+    const netInventory = calculateNetInventoryAtDate(parsedDate);
+    const netCapacities = calculateProductCapacities(netInventory);
+    const baseCapacities = calculateProductCapacities();
 
-    if (bkLastRow > 1) {
-      const bkRows = bkSheet.getRange(2, 1, bkLastRow - 1, 5).getValues();
-      bkRows.forEach(r => {
-        let bDateStr = r[1] instanceof Date ? Utilities.formatDate(r[1], "Asia/Taipei", "yyyy/MM/dd") : String(r[1]).substring(0, 10).replace(/-/g, "/");
-        // 修正 Bug #1：累計所有活動日 <= normalizedDateStr 的預約套數
-        if (bDateStr <= normalizedDateStr) {
-          const prodName = String(r[2]);
-          bookingsOnDate[prodName] = (bookingsOnDate[prodName] || 0) + (Number(r[3]) || 0);
-        }
-      });
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const targetMid = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
-    const daysDiff = Math.ceil((targetMid.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    const isOver45Days = (daysDiff > 45);
-
-    Object.keys(capacities).forEach(id => {
-      const p = capacities[id];
-      const booked = bookingsOnDate[p.productName] || 0;
-      const netQty = Math.max(0, p.maxCapacity - floor - booked);
+    Object.keys(netCapacities).forEach(id => {
+      const p = netCapacities[id];
+      const baseP = baseCapacities[id] || p;
+      const booked = Math.max(0, baseP.maxCapacity - p.maxCapacity);
+      const netQty = Math.max(0, p.maxCapacity - floor);
 
       // 彙整該方案相關零件之未到貨補貨明細 (供業務端到貨提醒)
       let incomingNotices = [];
@@ -268,15 +275,17 @@ function api_submitBooking(data, operator) {
     const auth = verifyUserRole_(operator, [CONFIG.ROLES.ADMIN, CONFIG.ROLES.SALES, CONFIG.ROLES.INVENTORY]);
     if (!auth.authorized) return { success: false, message: auth.message };
 
-    const res = submitBookingRecord(
-      data.eventDate,
-      data.productId,
-      data.qty,
-      data.groupName,
-      data.phone,
-      data.note,
-      data.bookingNo
-    );
+    const res = withScriptLock_(() => {
+      return submitBookingRecord(
+        data.eventDate,
+        data.productId,
+        data.qty,
+        data.groupName,
+        data.phone,
+        data.note,
+        data.bookingNo
+      );
+    });
 
     if (res && res.success && typeof writeAuditLog === "function") {
       writeAuditLog({
